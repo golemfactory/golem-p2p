@@ -42,6 +42,8 @@ crates/golem-p2p       core library
 crates/golem-p2p-cli   `golem-p2p` command line tool (directory, listen, send, probe, bench, soak)
 docs/design.md         design document
 docs/cli-events.md     JSON events of the CLI (`--json`), for test harnesses
+harness/               NAT lab, benchmark campaigns, soak tests and their results
+nodes/                 shared notes of the test machines, and the push rules (nodes/README.md)
 ```
 
 ## Build and test
