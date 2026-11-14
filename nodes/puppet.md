@@ -21,6 +21,28 @@ as VMs.
 
 No host firewall yet (only sshd on 22 listens publicly).
 
+## Access
+
+ssh as `ubuntu` (passwordless sudo on the host and both VMs), keys only, no
+passwords, no root login.
+
+| key | host `213.163.75.157` | `p2p-natlab`, `p2p-relay1` |
+|---|---|---|
+| master (`…R2FZnV`, see `nodes/master.md`) | from `65.109.154.126` and `2a01:4f9:3080:1146::2` | from `10.167.138.1` (the host's bridge address, i.e. `ProxyJump` through the host) |
+
+Host keys (ED25519):
+
+| host | fingerprint |
+|---|---|
+| puppet `213.163.75.157` | `SHA256:AZW0bbTkjuNRb44UYKYCQsCYzWqbuJ9aR1pYL0x7YkQ` |
+| `p2p-natlab` `10.167.138.10` | `SHA256:cdKCUjmi39CBRsUoidFkoq0/4c6MUQdpvbOin8Krm1Y` |
+| `p2p-relay1` `10.167.138.20` | `SHA256:zj8P7Mnn+rF8VhCZXb/vYwpCrsKtet0aGymSuogtjkM` |
+
+With that access a node may run the lab (`lab.sh`, `realworld.sh`) and switch
+the host NAT (`sudo p2p-hostnat set PROFILE`). One lab run at a time: say in
+`comms/` before you start one, and leave the host NAT on `port-restricted`
+afterwards.
+
 ## VMs
 
 Incus 6.0.5, QEMU/KVM, bridge `incusbr0` `10.167.138.0/24`, ZFS pool on the
