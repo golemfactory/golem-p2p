@@ -647,6 +647,31 @@ async fn expired_member_is_disconnected() {
     .await;
 }
 
+/// Reads one HTTP/1.1 request with its `Content-Length` body, so that the
+/// answer is not lost to a reset for unread data.
+async fn read_http_request(s: &mut tokio::net::TcpStream) {
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        let n = s.read(&mut chunk).await.unwrap_or(0);
+        if n == 0 {
+            return;
+        }
+        buf.extend_from_slice(&chunk[..n]);
+        if let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            let head = String::from_utf8_lossy(&buf[..end]).to_ascii_lowercase();
+            let len = head
+                .lines()
+                .find_map(|l| l.strip_prefix("content-length:"))
+                .and_then(|v| v.trim().parse::<usize>().ok())
+                .unwrap_or(0);
+            if buf.len() >= end + 4 + len {
+                return;
+            }
+        }
+    }
+}
+
 /// A rate limit in front of the registry (`429`) is a temporary failure,
 /// not a refusal; other `4xx` answers are refusals.
 #[tokio::test(flavor = "multi_thread")]
@@ -661,8 +686,7 @@ async fn rate_limited_registry_is_unavailable_not_refusing() {
             let server = tokio::spawn(async move {
                 loop {
                     let (mut s, _) = listener.accept().await.unwrap();
-                    let mut buf = vec![0u8; 4096];
-                    let _ = s.read(&mut buf).await;
+                    read_http_request(&mut s).await;
                     let resp = format!(
                         "HTTP/1.1 {status}\r\nContent-Length: 4\r\nConnection: close\r\n\r\nslow"
                     );
