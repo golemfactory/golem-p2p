@@ -124,7 +124,10 @@ async fn call(
 ) -> anyhow::Result<String> {
     let (status, body) = c.call(method, path, token).await?;
     if !(200..300).contains(&status) {
-        bail!("registry answered HTTP {status}: {}", body.trim());
+        bail!(
+            "registry answered {}",
+            golem_p2p::membership::error_text(status, &body)
+        );
     }
     Ok(body)
 }

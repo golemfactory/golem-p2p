@@ -687,8 +687,11 @@ async fn rate_limited_registry_is_unavailable_not_refusing() {
                 loop {
                     let (mut s, _) = listener.accept().await.unwrap();
                     read_http_request(&mut s).await;
+                    // nginx's error pages are HTML.
+                    let page = format!("<html>\r\n<head><title>{status}</title></head>\r\n</html>\r\n");
                     let resp = format!(
-                        "HTTP/1.1 {status}\r\nContent-Length: 4\r\nConnection: close\r\n\r\nslow"
+                        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
+                        page.len()
                     );
                     let _ = s.write_all(resp.as_bytes()).await;
                 }
@@ -708,6 +711,7 @@ async fn rate_limited_registry_is_unavailable_not_refusing() {
             )
             .await
             .unwrap_err();
+            assert!(!err.to_string().contains('<'), "{err}");
             if temporary {
                 assert!(
                     matches!(err, Error::Certify(IssueError::Unavailable(_))),
@@ -766,4 +770,21 @@ async fn wrong_network_settings_fail_clearly() {
         }
     })
     .await;
+}
+
+#[test]
+fn registry_error_text() {
+    use golem_p2p::membership::error_text;
+    assert_eq!(
+        error_text(
+            502,
+            "<html>\r\n<head><title>502 Bad Gateway</title></head>\r\n"
+        ),
+        "HTTP 502"
+    );
+    assert_eq!(
+        error_text(409, "registered by another account\n"),
+        "HTTP 409: registered by another account"
+    );
+    assert_eq!(error_text(500, ""), "HTTP 500");
 }

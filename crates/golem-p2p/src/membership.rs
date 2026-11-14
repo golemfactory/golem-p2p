@@ -432,6 +432,26 @@ impl RegistryClient {
     }
 }
 
+/// An error answer of the registry, or of the proxy in front of it, for a
+/// message: `HTTP <status>` and the first line of the body, unless the body
+/// is an HTML page (a proxy's error page, e.g. a `502` while the registry is
+/// down).
+pub fn error_text(status: u16, body: &str) -> String {
+    let body = body.trim();
+    let line: String = body
+        .lines()
+        .next()
+        .unwrap_or("")
+        .chars()
+        .take(200)
+        .collect();
+    if line.is_empty() || line.starts_with('<') {
+        format!("HTTP {status}")
+    } else {
+        format!("HTTP {status}: {line}")
+    }
+}
+
 #[cfg(feature = "http-directory")]
 impl CertIssuer for RegistryClient {
     fn certify<'a>(
@@ -469,10 +489,13 @@ impl CertIssuer for RegistryClient {
             // request timeouts are temporary, not a refusal.
             let temporary = matches!(status.as_u16(), 408 | 429);
             if status.is_client_error() && !temporary {
+                if text.starts_with('<') {
+                    return Err(IssueError::Refused(error_text(status.as_u16(), &text)));
+                }
                 return Err(IssueError::Refused(text));
             }
             if !status.is_success() {
-                return Err(IssueError::Unavailable(format!("HTTP {status}: {text}")));
+                return Err(IssueError::Unavailable(error_text(status.as_u16(), &text)));
             }
             hex::decode(&text).map_err(|_| IssueError::Unavailable("bad certificate hex".into()))
         })
