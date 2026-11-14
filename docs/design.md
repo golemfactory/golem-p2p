@@ -679,7 +679,9 @@ iroh-relay's `shared_token` or `http` access modes) is possible later but not
 needed to close the network.
 
 **Renewal and removal.** Certificates live 1 h by default (`registry init
---cert-lifetime`). The node renews halfway through, re-signs its record with
+--cert-lifetime`). The node renews halfway through (timed on its own clock
+from when it received the certificate, so a clock difference with the
+registry cannot make it renew in a loop), re-signs its record with
 the new certificate and pushes it to connected peers and the directory;
 failures are retried with backoff. Adding an alias first gets a certificate
 covering it (and fails if it is not registered). Removing a node only stops
@@ -689,7 +691,12 @@ existing members to keep talking until then; new nodes and renewals need it.
 
 Tests: `closed_network.rs` (members connect, outsiders refused both ways,
 accounts own their nodes, a new alias needs registration, certificate
-checks).
+checks, renewal on a live connection, no renewal loop when the registry's
+clock is behind, and an expired member disconnected by its peer and refused
+afterwards; the expiry test uses certificates issued in the past instead of
+waiting out the 5 min clock tolerance). Checked by hand on a live network
+with 60 s certificates and the real tolerance: see
+`comms/2026-11-15-master-testnet-selftest.md`.
 
 ## 14. Not implemented or not tested yet
 
@@ -702,8 +709,8 @@ checks).
   `Builder::relay_config(RelayConfig::new(..).with_auth_token(..))`, not tested.
   Not needed for closed networks (section 13a), where relays stay public.
 * Closed networks: the registry speaks plain HTTP (run it behind a TLS
-  proxy); no rate limiting; no test yet of a certificate expiring on a live
-  connection (the 5 min clock tolerance makes it slow to test); registry key
+  proxy); no rate limiting in the registry itself (put it in the proxy:
+  nodes treat `429` and `408` as temporary and retry renewals); registry key
   rotation is supported by `MembershipPolicy::with_key` but has no CLI.
 * Persisting `seq` (the API exists via `min_seq` and `local_record().seq()`).
 * Datagram and unidirectional streams (disabled: 0 uni streams).

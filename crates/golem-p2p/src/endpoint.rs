@@ -29,7 +29,7 @@ use crate::{
     error::{Error, Result},
     identity::NodeId,
     lookup::RecordLookup,
-    membership::{Membership, MembershipCert, MembershipError},
+    membership::{IssueError, Membership, MembershipCert, MembershipError},
     record::{
         MAX_RELAYS, NodeRecord, RECORD_VERSION, RELAY_URL_SCHEME, VerifiedRecord, sign_record,
         sign_record_with_membership,
@@ -763,12 +763,17 @@ async fn certify(
     };
     let proof = sign_record(&proof, secret, signer).await?;
     let bytes = m.issuer.certify(&proof).await?;
-    let cert = MembershipCert::decode(&bytes)?;
+    let cert = MembershipCert::decode(&bytes)
+        .map_err(|e| IssueError::Unavailable(format!("bad certificate from the registry: {e}")))?;
     // Check what the registry sent like a peer would.
     m.policy
-        .check_cert(&cert, secret.public(), SystemTime::now())?;
+        .check_cert(&cert, secret.public(), SystemTime::now())
+        .map_err(IssueError::Mismatch)?;
     if let Some(id) = identities.all().into_iter().find(|id| !cert.covers(&[*id])) {
-        return Err(MembershipError::IdentityNotCovered(id).into());
+        return Err(IssueError::Unavailable(format!(
+            "the registry's certificate does not cover {id}"
+        ))
+        .into());
     }
     Ok(cert)
 }
@@ -1447,6 +1452,19 @@ async fn address_loop(inner: Arc<Inner>, mut w: impl Watcher<Value = iroh::Endpo
     }
 }
 
+/// When to renew a certificate we just received: halfway through its
+/// lifetime, counted on our own clock from now. Not from its `issued_at`,
+/// which is the registry's clock: with our clock ahead of the registry's by
+/// more than half the lifetime, the renewal would always be due and we would
+/// renew in a tight loop. At least [`RETRY_MIN`].
+fn renew_delay(cert: &MembershipCert) -> Duration {
+    let life = cert
+        .expires_at()
+        .duration_since(cert.issued_at())
+        .unwrap_or_default();
+    (life / 2).max(RETRY_MIN)
+}
+
 /// Closed network: renews our certificate halfway through its lifetime (and
 /// retries failures with backoff until it is renewed), and closes
 /// connections whose peer's certificate is no longer valid.
@@ -1457,23 +1475,17 @@ async fn membership_loop(inner: Arc<Inner>) {
     let mut sweep = tokio::time::interval(Duration::from_secs(5));
     let mut backoff = RETRY_MIN;
     let mut retry_at: Option<tokio::time::Instant> = None;
+    // The certificate from `bind` was received just now.
+    let mut renew_at = tokio::time::Instant::now()
+        + inner
+            .cert
+            .lock()
+            .expect("poisoned")
+            .as_ref()
+            .map(renew_delay)
+            .unwrap_or_default();
     loop {
-        let renew_at = retry_at.unwrap_or_else(|| {
-            let cert = inner.cert.lock().expect("poisoned").clone();
-            let now = SystemTime::now();
-            let half = cert
-                .map(|c| {
-                    let life = c
-                        .expires_at()
-                        .duration_since(c.issued_at())
-                        .unwrap_or_default();
-                    (c.issued_at() + life / 2)
-                        .duration_since(now)
-                        .unwrap_or_default()
-                })
-                .unwrap_or_default();
-            tokio::time::Instant::now() + half
-        });
+        let due = retry_at.unwrap_or(renew_at);
         tokio::select! {
             _ = inner.cancel.cancelled() => break,
             _ = sweep.tick() => {
@@ -1490,7 +1502,7 @@ async fn membership_loop(inner: Arc<Inner>) {
                     }
                 }
             }
-            _ = tokio::time::sleep_until(renew_at) => {
+            _ = tokio::time::sleep_until(due) => {
                 let (ids, seq) = {
                     let st = inner.local.lock().await;
                     (st.identities.clone(), st.seq)
@@ -1507,6 +1519,7 @@ async fn membership_loop(inner: Arc<Inner>) {
                 match res {
                     Ok(cert) => {
                         debug!(expires_at = ?cert.expires_at(), "membership certificate renewed");
+                        renew_at = tokio::time::Instant::now() + renew_delay(&cert);
                         inner.set_cert(cert);
                         match inner.update_record(None).await {
                             Ok(_) => {

@@ -213,7 +213,9 @@ ID in any directory), `timeout`, `connect`, `connection`, `handshake`,
 `rejected`, `stream_rejected`, `not_peer_identity`, `identity`, `record`,
 `discovery`, `bind`, `config`, `protocol`, `too_large`, `closed`, and in
 closed networks `not_member` (the peer has no valid membership certificate)
-and `membership` (the registry refused or could not issue our certificate).
+and `membership` (the registry refused or could not issue our certificate,
+or issued one for another network or key than `--network` and
+`--registry-key`).
 
 ### `bench_phase` (bench)
 

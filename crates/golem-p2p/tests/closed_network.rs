@@ -416,3 +416,330 @@ async fn certificate_checks() {
     bytes[n - 1] ^= 1;
     assert!(MembershipCert::decode(&bytes).is_err());
 }
+
+/// An in-process registry for timing tests: issues certificates for any
+/// identity, `lifetime_s` long, with the registry's clock `behind_s` behind
+/// ours, until `refuse` is set (the node was removed). Counts its calls.
+#[derive(Debug, Clone)]
+struct ScriptedIssuer(Arc<IssuerState>);
+
+#[derive(Debug)]
+struct IssuerState {
+    key: golem_p2p::iroh::SecretKey,
+    network: String,
+    lifetime_s: u64,
+    behind_s: u64,
+    refuse: std::sync::atomic::AtomicBool,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl ScriptedIssuer {
+    fn new(key: &golem_p2p::iroh::SecretKey, lifetime_s: u64, behind_s: u64) -> Self {
+        Self(Arc::new(IssuerState {
+            key: key.clone(),
+            network: "test-net".into(),
+            lifetime_s,
+            behind_s,
+            refuse: false.into(),
+            calls: 0.into(),
+        }))
+    }
+
+    fn calls(&self) -> usize {
+        self.0.calls.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn refuse(&self) {
+        self.0
+            .refuse
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl CertIssuer for ScriptedIssuer {
+    fn certify<'a>(
+        &'a self,
+        proof: &'a golem_p2p::VerifiedRecord,
+    ) -> golem_p2p::signer::BoxFuture<'a, Result<Vec<u8>, IssueError>> {
+        Box::pin(async move {
+            use std::sync::atomic::Ordering::SeqCst;
+            let s = &self.0;
+            s.calls.fetch_add(1, SeqCst);
+            if s.refuse.load(SeqCst) {
+                return Err(IssueError::Refused("removed".into()));
+            }
+            let now = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                - s.behind_s;
+            let cert = MembershipCert::issue(
+                CertPayload {
+                    version: CERT_VERSION,
+                    network: s.network.clone(),
+                    endpoint_id: *proof.endpoint_id().as_bytes(),
+                    identities: proof.identities().to_vec(),
+                    issued_at: now,
+                    expires_at: now + s.lifetime_s,
+                },
+                &s.key,
+            );
+            Ok(cert.to_bytes().to_vec())
+        })
+    }
+}
+
+/// Certificates are renewed on live connections: a node with 2 s
+/// certificates renews about every second, its peer gets every renewed
+/// record over the connection, and the connection stays up.
+#[tokio::test(flavor = "multi_thread")]
+async fn certificates_renew_on_live_connections() {
+    init_tracing();
+    with_timeout(60, async {
+        let key = golem_p2p::iroh::SecretKey::generate();
+        let policy = MembershipPolicy::new("test-net", key.public());
+        let discovery: Arc<dyn Discovery> = Arc::new(MemoryDiscovery::new());
+        let signer = InMemorySigner::new();
+        let (a, b) = (signer.generate(), signer.generate());
+        let stable = ScriptedIssuer::new(&key, 3600, 0);
+        let short = ScriptedIssuer::new(&key, 2, 0);
+        let na = node(
+            &discovery,
+            &signer,
+            Identities::new(a),
+            Some(Membership::new(policy.clone(), stable.clone())),
+        )
+        .await
+        .unwrap();
+        let nb = node(
+            &discovery,
+            &signer,
+            Identities::new(b),
+            Some(Membership::new(policy.clone(), short.clone())),
+        )
+        .await
+        .unwrap();
+        spawn_echo(&na);
+        let mut events = na.subscribe();
+        echo(&nb, a, "first").await.unwrap();
+        let conn = nb.connections()[0].stable_id();
+
+        let mut renewed = 0;
+        let mut last_expiry = 0;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(6);
+        while let Ok(ev) = tokio::time::timeout_at(deadline, events.recv()).await {
+            if let golem_p2p::Event::PeerUpdated { current, .. } = ev.unwrap() {
+                let cert = policy.check_record(&current, SystemTime::now()).unwrap();
+                assert!(cert.payload().expires_at >= last_expiry);
+                last_expiry = cert.payload().expires_at;
+                renewed += 1;
+            }
+        }
+        assert!(renewed >= 3, "only {renewed} renewed records in 6 s");
+        assert!(short.calls() >= 4, "{} certify calls", short.calls());
+        // The same connection carries on.
+        echo(&nb, a, "still there").await.unwrap();
+        assert_eq!(nb.connections().len(), 1);
+        assert_eq!(nb.connections()[0].stable_id(), conn);
+        // The node with 1 h certificates did not renew.
+        assert_eq!(stable.calls(), 1);
+    })
+    .await;
+}
+
+/// The renewal is timed on the node's clock: a registry whose clock is far
+/// behind (here 40 s, with 60 s certificates, so every certificate looks
+/// past its half-life on arrival) does not make the node renew in a loop.
+#[tokio::test(flavor = "multi_thread")]
+async fn renewal_does_not_loop_on_registry_clock_offset() {
+    init_tracing();
+    with_timeout(30, async {
+        let key = golem_p2p::iroh::SecretKey::generate();
+        let policy = MembershipPolicy::new("test-net", key.public());
+        let discovery: Arc<dyn Discovery> = Arc::new(MemoryDiscovery::new());
+        let signer = InMemorySigner::new();
+        let issuer = ScriptedIssuer::new(&key, 60, 40);
+        let _n = node(
+            &discovery,
+            &signer,
+            Identities::new(signer.generate()),
+            Some(Membership::new(policy, issuer.clone())),
+        )
+        .await
+        .unwrap();
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        assert_eq!(issuer.calls(), 1, "renewed before half the lifetime");
+    })
+    .await;
+}
+
+/// A node whose certificate expires (it was removed from the registry, so
+/// renewal is refused) loses its live connection: its peer closes it once
+/// the certificate is past expiry plus the clock tolerance, and refuses new
+/// connections. The certificate is issued so that this point is 4 s away;
+/// waiting for the real 5 min tolerance is left to manual tests.
+#[tokio::test(flavor = "multi_thread")]
+async fn expired_member_is_disconnected() {
+    init_tracing();
+    with_timeout(60, async {
+        let key = golem_p2p::iroh::SecretKey::generate();
+        let policy = MembershipPolicy::new("test-net", key.public());
+        let discovery: Arc<dyn Discovery> = Arc::new(MemoryDiscovery::new());
+        let signer = InMemorySigner::new();
+        let (a, b) = (signer.generate(), signer.generate());
+        let stable = ScriptedIssuer::new(&key, 3600, 0);
+        // Expires (with the 300 s tolerance) 4 s from now; renewal due in 30 s.
+        let expiring = ScriptedIssuer::new(&key, 60, 60 + 300 - 4);
+        let na = node(
+            &discovery,
+            &signer,
+            Identities::new(a),
+            Some(Membership::new(policy.clone(), stable.clone())),
+        )
+        .await
+        .unwrap();
+        let nb = node(
+            &discovery,
+            &signer,
+            Identities::new(b),
+            Some(Membership::new(policy.clone(), expiring.clone())),
+        )
+        .await
+        .unwrap();
+        expiring.refuse();
+        spawn_echo(&na);
+        let mut events_a = na.subscribe();
+        let mut events_b = nb.subscribe();
+        echo(&nb, a, "while valid").await.unwrap();
+        assert_eq!(na.connections().len(), 1);
+
+        async fn disconnected(
+            events: &mut tokio::sync::broadcast::Receiver<golem_p2p::Event>,
+        ) -> (golem_p2p::VerifiedRecord, String) {
+            let wait = async {
+                loop {
+                    if let golem_p2p::Event::Disconnected { peer, reason } =
+                        events.recv().await.unwrap()
+                    {
+                        break (peer, reason);
+                    }
+                }
+            };
+            tokio::time::timeout(Duration::from_secs(15), wait)
+                .await
+                .expect("connection not closed after expiry")
+        }
+        // The peer closes the connection...
+        let (peer, _) = disconnected(&mut events_a).await;
+        assert_eq!(peer.default_id(), b);
+        assert!(policy.check_record(&peer, SystemTime::now()).is_err());
+        // ...and the expired node learns why.
+        let (peer, reason) = disconnected(&mut events_b).await;
+        assert_eq!(peer.default_id(), a);
+        assert!(reason.contains("membership expired"), "{reason}");
+        // A new connection is refused.
+        let err = echo(&nb, a, "after expiry").await.unwrap_err();
+        assert!(
+            matches!(err, Error::Rejected(RejectReason::NotMember)),
+            "{err}"
+        );
+    })
+    .await;
+}
+
+/// A rate limit in front of the registry (`429`) is a temporary failure,
+/// not a refusal; other `4xx` answers are refusals.
+#[tokio::test(flavor = "multi_thread")]
+async fn rate_limited_registry_is_unavailable_not_refusing() {
+    init_tracing();
+    with_timeout(30, async {
+        for (status, temporary) in [("429 Too Many Requests", true), ("403 Forbidden", false)] {
+            let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+                .await
+                .unwrap();
+            let addr = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                loop {
+                    let (mut s, _) = listener.accept().await.unwrap();
+                    let mut buf = vec![0u8; 4096];
+                    let _ = s.read(&mut buf).await;
+                    let resp = format!(
+                        "HTTP/1.1 {status}\r\nContent-Length: 4\r\nConnection: close\r\n\r\nslow"
+                    );
+                    let _ = s.write_all(resp.as_bytes()).await;
+                }
+            });
+            let key = golem_p2p::iroh::SecretKey::generate();
+            let client = RegistryClient::new(format!("http://{addr}/").parse().unwrap()).unwrap();
+            let discovery: Arc<dyn Discovery> = Arc::new(MemoryDiscovery::new());
+            let signer = InMemorySigner::new();
+            let err = node(
+                &discovery,
+                &signer,
+                Identities::new(signer.generate()),
+                Some(Membership::new(
+                    MembershipPolicy::new("test-net", key.public()),
+                    client,
+                )),
+            )
+            .await
+            .unwrap_err();
+            if temporary {
+                assert!(
+                    matches!(err, Error::Certify(IssueError::Unavailable(_))),
+                    "{status}: {err}"
+                );
+            } else {
+                assert!(
+                    matches!(err, Error::Certify(IssueError::Refused(_))),
+                    "{status}: {err}"
+                );
+            }
+            server.abort();
+        }
+    })
+    .await;
+}
+
+/// A node configured with another network name or registry key than its
+/// registry's fails at bind with an error that says so (not as if a peer
+/// were refused).
+#[tokio::test(flavor = "multi_thread")]
+async fn wrong_network_settings_fail_clearly() {
+    init_tracing();
+    with_timeout(30, async {
+        let reg = Registry::spawn().await;
+        let discovery: Arc<dyn Discovery> = Arc::new(MemoryDiscovery::new());
+        let signer = InMemorySigner::new();
+        let a = signer.generate();
+        let alice = reg.account("alice").await;
+        assert_eq!(reg.register(&alice, a).await, 204);
+        let key = reg.policy.registry_keys()[0];
+        let other_key = golem_p2p::iroh::SecretKey::generate().public();
+        for (policy, want) in [
+            (
+                MembershipPolicy::new("other-net", key),
+                MembershipError::WrongNetwork("test-net".into()),
+            ),
+            (
+                MembershipPolicy::new("test-net", other_key),
+                MembershipError::UntrustedIssuer,
+            ),
+        ] {
+            let err = node(
+                &discovery,
+                &signer,
+                Identities::new(a),
+                Some(Membership::new(policy, reg.client())),
+            )
+            .await
+            .unwrap_err();
+            match &err {
+                Error::Certify(IssueError::Mismatch(e)) => assert_eq!(e, &want),
+                _ => panic!("unexpected error: {err}"),
+            }
+            assert!(err.to_string().contains("network settings"), "{err}");
+        }
+    })
+    .await;
+}

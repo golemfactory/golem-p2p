@@ -321,6 +321,13 @@ pub enum IssueError {
     /// The registry could not be reached or answered badly.
     #[error("registry unavailable: {0}")]
     Unavailable(String),
+    /// The registry's certificate does not pass our own policy: the node is
+    /// configured with another network name or registry key than the
+    /// registry it asked.
+    #[error(
+        "the registry's certificate does not match this node's network settings (network name, registry key): {0}"
+    )]
+    Mismatch(MembershipError),
 }
 
 /// Something that issues membership certificates for this node: the
@@ -458,7 +465,10 @@ impl CertIssuer for RegistryClient {
                 body.extend_from_slice(&chunk);
             }
             let text = String::from_utf8_lossy(&body).trim().to_string();
-            if status.is_client_error() {
+            // Too many requests (a rate limit in front of the registry) and
+            // request timeouts are temporary, not a refusal.
+            let temporary = matches!(status.as_u16(), 408 | 429);
+            if status.is_client_error() && !temporary {
                 return Err(IssueError::Refused(text));
             }
             if !status.is_success() {
