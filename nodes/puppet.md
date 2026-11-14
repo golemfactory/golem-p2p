@@ -1,6 +1,6 @@
 # puppet
 
-**Updated:** 2026-11-13
+**Updated:** 2026-11-14
 
 ## Role
 
@@ -48,17 +48,56 @@ names as in `harness/`: `ssh -F ~/.ssh/p2p/ssh_config p2p-natlab`).
   (EIM + ADF), `full-cone` (EIM + EIF), `symmetric` (APDM + APDF) and `open`
   (every port except 22 and 56000-56099 forwarded to the VM).
 
-So an `uplink=real` lab node now crosses its emulated NAT, the lab VM's
-masquerade, and this host's NAT in the chosen profile, no longer an i3D NAT
-outside our control.
+The profile also applies on the hairpin (lab VM <-> `213.163.75.157` <->
+relay VM), so reflectors on the relay VM measure the same NAT as the internet.
+
+What reaches whom: processes on the lab VM itself get exactly the profile.
+Lab nodes with `uplink=real` cross their emulated NAT, then the lab VM's own
+masquerade (`lab.sh`, port-restricted: it drops unsolicited inbound), then
+this NAT. So for them the host profile can make the mapping stricter
+(`symmetric`), but `restricted`, `full-cone` and `open` do not open their
+filtering.
+
+Measured 2026-11-14 with `tools/natcheck.py` (reflectors on `p2p-relay1`
+`:56090`, `:56091`, all through the hairpin, so one remote IP only: `EIF`
+shows as `ADF`):
+
+| host profile | on the lab VM | lab node `real1` (easy) | lab node `real2` (symmetric) |
+|---|---|---|---|
+| `port-restricted` | EIM APDF, port kept | EIM APDF, port kept | APDM APDF |
+| `restricted` | EIM ADF, port kept | | |
+| `full-cone` | EIM ADF (EIF needs a second remote IP) | | |
+| `symmetric` | APDM APDF | APDM APDF | APDM APDF |
+| `open` | EIM ADF, unmapped ports open | EIM APDF (2 of 3; 1 APDM) | APDM APDF |
 
 ## Services
 
 | service | URL | state |
 |---|---|---|
-| iroh relay (`p2p-relay1`) | `https://213.163.75.157:56000`, QAD `udp/56001` | planned |
-| golem-p2p directory (`p2p-relay1`) | `http://213.163.75.157:56050/` (`realworld.sh` starts it per run) | planned |
-| NAT lab (`p2p-natlab`) | `harness/lab/deploy.sh`, then `lab.sh up` | planned |
+| iroh relay 1.4.1 (`p2p-relay1`) | `https://213.163.75.157:56000,quic=56001` | up since 2026-11-14, systemd `iroh-relay`, metrics on the VM at `127.0.0.1:9090` |
+| golem-p2p directory (`p2p-relay1`) | `http://213.163.75.157:56050/` | per run (`realworld.sh` starts and stops it) |
+| NAT lab (`p2p-natlab`) | `~/golem-p2p-lab` | deployed `8e4c3cb`; `lab.sh up selftest` + `selftest`: 8 of 8 pass; lab down between runs |
+
+The relay binary is the musl release (sha256 `9b9804c7…ac71b3`, the same as
+in `harness/lab/RESULTS.md`). Its certificate is new (older copies of
+`p2p-relay1.crt` no longer verify), self-signed, valid until 2029-11-13; use
+it as `--relay-ca` and as `~/.ssh/p2p/p2p-relay1.crt` for the harness scripts. SHA-256 fingerprint
+`0B:F5:F0:40:02:DD:4E:47:37:26:E3:27:D0:05:C4:30:32:65:BC:FF:09:91:69:E9:C1:0D:60:50:9E:BB:9C:D1`:
+
+```
+-----BEGIN CERTIFICATE-----
+MIIBxTCCAWygAwIBAgIUdzxPwflWBk6a/GS/ixNux5DzobowCgYIKoZIzj0EAwIw
+FTETMBEGA1UEAwwKcDJwLXJlbGF5MTAeFw0yNjExMTQyMTI3MTNaFw0yOTExMTMy
+MTI3MTNaMBUxEzARBgNVBAMMCnAycC1yZWxheTEwWTATBgcqhkjOPQIBBggqhkjO
+PQMBBwNCAAQcuIoB25B2956cMs+plw/f+sxLM06F4VGiOX7FWPKlHS4CPULEl3Wy
+FempCsR51kVlefByWqyo5bBGKaOGxXjjo4GZMIGWMB0GA1UdDgQWBBRzGs7trNu0
+THrEJayQzf9oPW77yDAfBgNVHSMEGDAWgBRzGs7trNu0THrEJayQzf9oPW77yDAx
+BgNVHREEKjAohwTVo0udgiBwdXBwZXQuZ29sZW1wMnAuYXJraXYtZ2xvYmFsLm5l
+dDAMBgNVHRMBAf8EAjAAMBMGA1UdJQQMMAoGCCsGAQUFBwMBMAoGCCqGSM49BAMC
+A0cAMEQCIBYfyt+sZYVkvhuAEN0QvbVv1tRZ657RH3wh1enEleejAiBKlLUhn/lo
+GF8PKf8KcWehbRjQc36XnARjep0g1wZtgw==
+-----END CERTIFICATE-----
+```
 
 ## Machine
 
