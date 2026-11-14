@@ -19,7 +19,8 @@ as VMs.
 | IPv6 | `2a00:1630:a128:17::` in `2a00:1630:a128::/48`, on-link (no AAAA record yet) |
 | NAT | host: none, the public addresses are on the interface (`bond0`); VMs: behind the host's NAT (below) |
 
-No host firewall yet (only sshd on 22 listens publicly).
+No host firewall yet (only sshd on 22 listens publicly; certbot on 80 for a
+minute when it issues or renews a certificate).
 
 ## Access
 
@@ -68,7 +69,7 @@ names as in `harness/`: `ssh -F ~/.ssh/p2p/ssh_config p2p-natlab`).
 * `p2p-natlab` uplink, switchable with `p2p-hostnat set PROFILE [UDP_TIMEOUT_S]`:
   `port-restricted` (EIM + APDF, plain masquerade, current), `restricted`
   (EIM + ADF), `full-cone` (EIM + EIF), `symmetric` (APDM + APDF) and `open`
-  (every port except 22 and 56000-56099 forwarded to the VM).
+  (every port except 22, 80 and 56000-56099 forwarded to the VM).
 
 The profile also applies on the hairpin (lab VM <-> `213.163.75.157` <->
 relay VM), so reflectors on the relay VM measure the same NAT as the internet.
@@ -96,12 +97,13 @@ shows as `ADF`):
 
 | service | URL | state |
 |---|---|---|
-| iroh relay 1.4.1 (`p2p-relay1`) | `https://213.163.75.157:56000,quic=56001` | up since 2026-11-14, systemd `iroh-relay`, metrics on the VM at `127.0.0.1:9090` |
+| iroh relay 1.4.1, lab (`p2p-relay1`) | `https://213.163.75.157:56000,quic=56001` + `--relay-ca` (self-signed, below) | up since 2026-11-14, systemd `iroh-relay`, metrics on the VM at `127.0.0.1:9090`; for `harness/` |
+| iroh relay 1.4.1, public (`p2p-relay1`) | `https://puppet.golemp2p.arkiv-global.net:56002,quic=56003`, no `--relay-ca` | up since 2026-11-14, systemd `iroh-relay-public`, metrics `127.0.0.1:9091`; Let's Encrypt certificate (HTTP-01 on the host, renewed by certbot, a deploy hook pushes it into the VM and restarts only this relay); for third-party testers |
 | golem-p2p directory (`p2p-relay1`) | `http://213.163.75.157:56050/` | per run (`realworld.sh` starts and stops it) |
 | NAT lab (`p2p-natlab`) | `~/golem-p2p-lab` | deployed `8e4c3cb`; `lab.sh up selftest` + `selftest`: 8 of 8 pass; lab down between runs |
 
-The relay binary is the musl release (sha256 `9b9804c7…ac71b3`, the same as
-in `harness/lab/RESULTS.md`). Its certificate is new (older copies of
+The relay binary (both relays) is the musl release (sha256 `9b9804c7…ac71b3`, the same as
+in `harness/lab/RESULTS.md`). The lab relay's certificate is new (older copies of
 `p2p-relay1.crt` no longer verify), self-signed, valid until 2029-11-13; use
 it as `--relay-ca` and as `~/.ssh/p2p/p2p-relay1.crt` for the harness scripts. SHA-256 fingerprint
 `0B:F5:F0:40:02:DD:4E:47:37:26:E3:27:D0:05:C4:30:32:65:BC:FF:09:91:69:E9:C1:0D:60:50:9E:BB:9C:D1`:
@@ -120,6 +122,11 @@ A0cAMEQCIBYfyt+sZYVkvhuAEN0QvbVv1tRZ657RH3wh1enEleejAiBKlLUhn/lo
 GF8PKf8KcWehbRjQc36XnARjep0g1wZtgw==
 -----END CERTIFICATE-----
 ```
+
+DNS for the VMs: the bridge's dnsmasq has `no-hosts` and sends
+`golemp2p.arkiv-global.net` to the host's upstream resolvers, so the VMs
+resolve `puppet.golemp2p.arkiv-global.net` to `213.163.75.157` (before, the
+host's `/etc/hosts` leaked through and gave them loopback addresses).
 
 ## Machine
 
