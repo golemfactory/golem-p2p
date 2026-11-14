@@ -1,6 +1,6 @@
 # master
 
-**Updated:** 2026-11-14
+**Updated:** 2026-11-15
 
 ## Role
 
@@ -48,9 +48,20 @@ State: **not authorized yet** (puppet answers `Permission denied (publickey)`).
 
 | service | URL | state |
 |---|---|---|
-| iroh relay | `https://master.golemp2p.arkiv-global.net:<port>` (Let's Encrypt) | planned |
-| golem-p2p directory | | none; realworld runs use puppet's per-run directory |
-| `golem-p2p listen` | | per run (`realworld.sh`) |
+| golem-p2p **registry**, network `golem-testnet` | `https://registry.golemp2p.arkiv-global.net/` | up since 2026-11-15, systemd `golem-p2p-registry` on `127.0.0.1:56080`, nginx + Let's Encrypt in front |
+| golem-p2p **directory**, members only | `https://directory.golemp2p.arkiv-global.net/` | up since 2026-11-15, systemd `golem-p2p-directory` on `127.0.0.1:56081`, nginx + Let's Encrypt in front |
+| iroh relay | | none; testnet nodes use puppet's public relay |
+| `golem-p2p listen` | | per run |
+
+`registry.` and `directory.` are CNAMEs of `master.golemp2p.arkiv-global.net`
+(role names: they can move to another host without changing node
+configuration). Registry public key (pass as `--registry-key`):
+
+    25d353d17365a58873bb3740c2f287450b1697c0ab000ebdc1ba39dd9ff51c52
+
+Certificates are valid 1 h and renewed by the node. The registry state and
+admin token are in `~/golem-p2p-testnet/` on master (mode 0600, not in git).
+Accounts: `master` (this host's test nodes).
 
 ## Checks from here
 
@@ -65,5 +76,5 @@ and IPv6.
 
 * Ubuntu 26.04 LTS, kernel 7.0, 32 CPUs, 62 GB RAM, 3.5 TB disk.
 * Rust 1.100 (default) and 1.96.0 (the toolchain CI pins).
-* `target/release/golem-p2p` built from `7499f4f`.
+* `/usr/local/bin/golem-p2p` built from `bd53fd6` (closed networks).
 * Docker runs here; its bridge addresses are not reachable from outside.
