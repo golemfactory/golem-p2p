@@ -4,6 +4,11 @@ run-name: Small Haiku scan · ${{ github.ref_name }} · @${{ github.actor }}
 # Deliberately manual-only: no push, pull_request, or scheduled API spending.
 on:
   workflow_dispatch:
+    inputs:
+      publish_pages:
+        description: Publish to Pages (requires repository Pages setup)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -59,9 +64,11 @@ jobs:
           fi
           python harness/security_scan.py --output "$REPORT_DIR/report.json"
 
-      - name: Render offline HTML
+      - name: Render HTML and embedded summary
         id: render
-        run: python harness/render_security_report.py "$REPORT_DIR/report.json"
+        run: |
+          python harness/render_security_report.py "$REPORT_DIR/report.json"
+          python harness/render_security_report.py "$REPORT_DIR/report.json" --format github
 
       - name: Upload reports
         id: artifact
@@ -73,7 +80,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Write run summary (metadata only)
+      - name: Embed report in Actions summary
         if: ${{ !cancelled() }}
         env:
           REPORT_DIR: ${{ runner.temp }}/security-scan
@@ -116,14 +123,19 @@ jobs:
           if os.environ["ARTIFACT_URL"]:
               lines += ["", f"[Download reports]({os.environ['ARTIFACT_URL']})", "",
                         "Open `report.html` from the downloaded archive. `report.json` contains the structured output; `scan-plan.json` records scope and limits."]
-          lines += ["", "Findings are not included in this summary and do not fail the job. Scanner or rendering failures do fail the job.",
+          lines += ["", "Findings are embedded below and do not fail the job. Scanner or rendering failures do fail the job.",
                     "Cost figures use the scanner’s configured rates; they are estimates, not billing guarantees. Missing usage does not imply zero cost."]
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
               output.write("\n".join(lines) + "\n")
+              summary = directory / "report.summary.md"
+              if summary.exists():
+                  output.write("\n" + summary.read_text(encoding="utf-8"))
+              else:
+                  output.write("\nNo embedded report is available for this run. Check the step status above.\n")
           PY
 
       - name: Prepare public Pages report
-        if: ${{ success() && github.ref == 'refs/heads/main' }}
+        if: ${{ success() && inputs.publish_pages && github.ref == 'refs/heads/main' }}
         run: |
           mkdir -p "$RUNNER_TEMP/security-scan-site"
           cp "$REPORT_DIR/report.html" "$RUNNER_TEMP/security-scan-site/index.html"
@@ -131,7 +143,7 @@ jobs:
           cp "$REPORT_DIR/scan-plan.json" "$RUNNER_TEMP/security-scan-site/scan-plan.json"
 
       - name: Upload Pages site
-        if: ${{ success() && github.ref == 'refs/heads/main' }}
+        if: ${{ success() && inputs.publish_pages && github.ref == 'refs/heads/main' }}
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:
           path: ${{ runner.temp }}/security-scan-site
@@ -139,7 +151,7 @@ jobs:
   deploy:
     name: Publish report to GitHub Pages
     needs: scan
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ inputs.publish_pages && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

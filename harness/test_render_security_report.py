@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from render_security_report import main, render_report
+from render_security_report import main, render_report, render_github_summary
 
 
 class Tags(HTMLParser):
@@ -23,6 +23,25 @@ class Tags(HTMLParser):
 
 
 class RenderTests(unittest.TestCase):
+    def test_github_summary_escapes_findings_and_has_expandable_sections(self):
+        payload = '</p><script>example()</script><img src="https://example.com/tracker">\n![x](https://example.com/image)'
+        finding = dict.fromkeys(("title", "file", "impact", "prerequisites", "evidence",
+                                 "suggested_fix", "validation_needed"), payload)
+        finding.update(severity="high", confidence="low", line=9)
+        result = render_github_summary({"summary": payload, "findings": [finding], "limitations": [payload]})
+        tags = Tags(result).tags
+        self.assertNotIn('script', tags)
+        self.assertNotIn('img', tags)
+        self.assertEqual(tags.count('details'), 2)
+        self.assertIn('<td align="center"><strong>1</strong></td>', result)
+        self.assertIn('&lt;script&gt;', result)
+
+    def test_github_summary_size_and_missing_result(self):
+        result = render_github_summary({"summary": '🟠' * 300_000, "findings": [], "limitations": []})
+        self.assertLess(len(result.encode()), 900_000)
+        self.assertIn('too large', result)
+        self.assertIn('not a zero-findings', render_github_summary({"status": "failed"}))
+
     def test_untrusted_text_cannot_create_html(self):
         payload = '<script>alert("example")</script><img src=x onerror=alert(1)>'
         finding = dict.fromkeys(("title", "file", "impact", "prerequisites", "evidence",
@@ -61,6 +80,11 @@ class RenderTests(unittest.TestCase):
                 self.assertEqual(destination.read_bytes(), original)
             self.assertNotIn(marker, stdout.getvalue() + stderr.getvalue())
             self.assertIn(marker, original.decode())
+            summary_log = io.StringIO()
+            with patch("sys.argv", ["render_security_report.py", str(source), "--format", "github"]), redirect_stdout(summary_log):
+                self.assertEqual(main(), 0)
+            self.assertNotIn(marker, summary_log.getvalue())
+            self.assertIn(marker, source.with_suffix('.summary.md').read_text())
 
 
 if __name__ == "__main__":

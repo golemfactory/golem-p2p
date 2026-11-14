@@ -13,14 +13,21 @@ Only one scan job runs at a time. The scan step has a three-minute timeout;
 the whole job has a ten-minute timeout. Actions are pinned to commit hashes,
 repository permissions are read-only, and checkout credentials are not persisted.
 
-The run summary contains operational status, token usage, and estimated cost.
-Download its artifact and open `report.html` locally. The archive also contains
-`report.json` and `scan-plan.json`; artifacts are retained for 14 days. Findings
-stay out of the summary and logs, and never fail the job. Operational failures
-do fail it. If generation fails, the artifact may contain only the scan plan;
+The Actions run summary embeds the report directly: severity counts, summary,
+expandable findings with source locations and all detail fields, and limitations.
+It also shows operational status, token usage, and estimated cost. This uses
+GitHub-supported HTML and Markdown, without custom CSS or JavaScript, and needs
+no Pages setup. Model text is escaped and rendered literally. Findings stay
+out of logs and never fail the job; operational failures do fail it.
+
+The downloadable artifact contains `report.html`, `report.json`,
+`report.summary.md`, and `scan-plan.json`; artifacts are retained for 14 days.
+If generation fails, the artifact may contain only the scan plan;
 unavailable usage is not evidence of zero API cost. No automatic retries run.
 
-Successful manual runs on `main` also publish the report to
+Pages publishing is optional and **off by default**. After an administrator sets
+up Pages, check **Publish to Pages** when manually starting a run on `main` to
+also publish the report to
 <https://golemfactory.github.io/golem-p2p/>. This is a **public** GitHub Pages
 site. The latest HTML report is served at the site root, with `report.json`
 and `scan-plan.json` alongside it. Each deployment replaces the previous site;
@@ -88,6 +95,17 @@ The default destination is the same filename with an `.html` extension. Use
 never overwritten. The renderer accepts the full scan report or a standalone
 `Review` object containing `summary`, `findings`, and `limitations`. Runs with
 status metadata but no review are displayed explicitly as missing results.
+
+To generate the GitHub Actions summary fragment instead:
+
+```sh
+python3 harness/render_security_report.py harness/results/security-haiku.json --format github
+```
+
+This writes `security-haiku.summary.md`. The workflow appends it directly to
+`GITHUB_STEP_SUMMARY` without printing it. Oversized reports get a download
+notice in the summary to stay below GitHub's 1 MiB per-step limit; full reports
+remain in the artifacts.
 
 The HTML includes severity counts, findings, limitations, usage, estimated cost,
 and the source manifest when supplied. All report text is escaped and displayed

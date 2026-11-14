@@ -90,6 +90,58 @@ def definition_list(items):
     ) + "</dl>"
 
 
+def render_github_summary(report):
+    """Use GitHub's supported HTML subset; never interpret model text as Markdown."""
+    if not isinstance(report, dict):
+        raise ValueError("Report must be an object")
+    review = report.get("review", report if "findings" in report else None)
+    if review is None:
+        if "status" not in report:
+            raise ValueError("Missing review or run status")
+        return "## Scan findings\n\nNo structured review available. This is not a zero-findings result.\n"
+    validate_review(review)
+
+    def inline(value):
+        # Blank lines can end a raw HTML block in GFM, so preserve them as tags.
+        return text(value).replace('\r', '').replace('\n', '<br>')
+
+    def paragraph(value):
+        return '<p>' + inline(value) + '</p>'
+
+    findings = review["findings"]
+    counts = Counter(item["severity"] for item in findings)
+    icons = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🔵"}
+    parts = ['## Scan findings\n\n<table><thead><tr>']
+    for severity in SEVERITIES:
+        parts.append(f'<th>{icons[severity]} {severity.title()}</th>')
+    parts.append('</tr></thead><tbody><tr>')
+    parts.extend(f'<td align="center"><strong>{counts[severity]}</strong></td>' for severity in SEVERITIES)
+    parts.append('</tr></tbody></table>\n\n')
+    parts.append(paragraph(review["summary"]) + '\n\n')
+    if not findings:
+        parts.append('<p>No findings reported within this scan’s scope.</p>\n\n')
+    for index, finding in enumerate(findings, 1):
+        severity = finding["severity"]
+        parts.append(f'<details open><summary><strong>{index:02d}. '
+                     f'{icons[severity]} {severity.title()} — {inline(finding["title"])}'
+                     '</strong></summary>\n\n')
+        parts.append('<p><strong>Confidence:</strong> ' + inline(finding["confidence"].title()) +
+                     '<br><strong>Source:</strong> <code>' + inline(finding["file"]) +
+                     f':{finding["line"]}</code></p>\n\n')
+        for key, label in DETAILS:
+            parts.append(f'<h4>{label}</h4>\n\n' + paragraph(finding[key]) + '\n\n')
+        parts.append('</details>\n\n<hr>\n\n')
+    parts.append('<details><summary><strong>Scope limitations</strong></summary>\n\n<ul>')
+    parts.extend('<li>' + inline(item) + '</li>' for item in review["limitations"])
+    parts.append('</ul>\n\n</details>\n\n'
+                 '<p><em>Model-generated findings are shown as supplied; rendering does not validate them.</em></p>\n')
+    result = ''.join(parts)
+    # GitHub limits a step summary to 1 MiB; reserve room for run metadata.
+    if len(result.encode('utf-8')) > 900_000:
+        return "## Scan findings\n\nThe report is too large to embed. Download the complete HTML/JSON artifact from this run.\n"
+    return result
+
+
 def render_report(report):
     if not isinstance(report, dict):
         raise ValueError("Report must be an object")
@@ -176,12 +228,14 @@ def render_report(report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path, help="Structured report JSON")
-    parser.add_argument("--output", type=Path, help="HTML destination; defaults to the input name with .html")
+    parser.add_argument("--format", choices=("html", "github"), default="html",
+                        help="Offline HTML or a GitHub Actions summary fragment")
+    parser.add_argument("--output", type=Path, help="Destination; defaults to .html or .summary.md")
     args = parser.parse_args()
-    output = args.output or args.input.with_suffix(".html")
+    output = args.output or args.input.with_suffix(".html" if args.format == "html" else ".summary.md")
     try:
         report = json.loads(args.input.read_text(encoding="utf-8"))
-        html = render_report(report)
+        html = render_report(report) if args.format == "html" else render_github_summary(report)
         output.parent.mkdir(parents=True, exist_ok=True)
         # Preserve both the input and any existing report.
         with output.open("x", encoding="utf-8") as destination:
@@ -190,7 +244,7 @@ def main():
         # Never print report content, JSON parser excerpts, or provider messages.
         print("Rendering failed: check the input schema and ensure the output path is writable and does not exist.", file=sys.stderr)
         return 1
-    print(f"HTML report: {output}")
+    print(f"Rendered report: {output}")
     return 0
 
 
