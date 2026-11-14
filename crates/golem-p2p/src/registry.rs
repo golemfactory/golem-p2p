@@ -1,5 +1,6 @@
-//! The registry of a closed network (feature `registry-server`; the HTTP
-//! client [`AdminClient`] needs `http-directory`).
+//! The registry of a closed network (feature `registry-server`; its HTTP
+//! client, [`RegistryClient`](crate::membership::RegistryClient), needs
+//! `http-directory`).
 //!
 //! The registry decides who is a member. It keeps:
 //!
