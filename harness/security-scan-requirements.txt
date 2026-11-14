@@ -1,0 +1,1 @@
+pydantic-ai-slim[anthropic]==2.68.0

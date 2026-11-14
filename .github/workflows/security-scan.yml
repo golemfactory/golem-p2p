@@ -1,0 +1,123 @@
+name: Security scan · Haiku
+run-name: Small Haiku scan · ${{ github.ref_name }} · @${{ github.actor }}
+
+# Deliberately manual-only: no push, pull_request, or scheduled API spending.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-scan-haiku
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Scan and render report
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Prepare report directory
+        run: echo "REPORT_DIR=$RUNNER_TEMP/security-scan" >> "$GITHUB_ENV"
+
+      - name: Check out selected revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: harness/security-scan-requirements.txt
+
+      - name: Install scanner
+        run: python -m pip install --disable-pip-version-check -r harness/security-scan-requirements.txt
+
+      - name: Check renderer with synthetic data
+        run: python -m unittest discover -s harness -p 'test_render_security_report.py'
+
+      - name: Record scope and budget (no API call)
+        id: plan
+        run: |
+          mkdir -p "$REPORT_DIR"
+          python harness/security_scan.py --dry-run > "$REPORT_DIR/scan-plan.json"
+
+      - name: Run one bounded Haiku review
+        id: scan
+        timeout-minutes: 3
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_API_KEY_SCX }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::Repository secret CLAUDE_API_KEY_SCX is missing or unavailable."
+            exit 1
+          fi
+          python harness/security_scan.py --output "$REPORT_DIR/report.json"
+
+      - name: Render offline HTML
+        id: render
+        run: python harness/render_security_report.py "$REPORT_DIR/report.json"
+
+      - name: Upload reports
+        id: artifact
+        if: ${{ !cancelled() && steps.plan.outcome == 'success' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: security-scan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/security-scan/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Write run summary (metadata only)
+        if: ${{ !cancelled() }}
+        env:
+          REPORT_DIR: ${{ runner.temp }}/security-scan
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          RENDER_OUTCOME: ${{ steps.render.outcome }}
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          directory = Path(os.environ["REPORT_DIR"])
+          def load(name):
+              path = directory / name
+              return json.loads(path.read_text()) if path.exists() else {}
+
+          plan = load("scan-plan.json")
+          report = load("report.json")
+          usage = report.get("usage", {})
+          def dollars(value):
+              return f"${value:.6f}" if isinstance(value, (int, float)) else "Unavailable"
+
+          rows = [
+              ("Scan", os.environ["SCAN_OUTCOME"]),
+              ("HTML", os.environ["RENDER_OUTCOME"]),
+              ("Model", plan.get("model", "Unavailable")),
+              ("Commit", plan.get("git_head", os.environ["GITHUB_SHA"])),
+              ("Source files", len(plan.get("scope", []))),
+              ("Input token limit", plan.get("input_token_limit", "Unavailable")),
+              ("Output token limit", plan.get("output_token_limit", "Unavailable")),
+              ("Generation request limit", plan.get("generation_request_limit", "Unavailable")),
+              ("Retries", "0"),
+              ("Input / output tokens", f"{usage.get('input_tokens', '—')} / {usage.get('output_tokens', '—')}"),
+              ("Estimated cost", dollars(report.get("estimated_actual_usd"))),
+              ("Configured maximum estimate", dollars(plan.get("estimated_max_usd"))),
+          ]
+          lines = ["## Small Haiku security scan", "", "| Run detail | Value |", "| --- | --- |"]
+          lines += [f"| {label} | {value} |" for label, value in rows]
+          if os.environ["ARTIFACT_URL"]:
+              lines += ["", f"[Download reports]({os.environ['ARTIFACT_URL']})", "",
+                        "Open `report.html` from the downloaded archive. `report.json` contains the structured output; `scan-plan.json` records scope and limits."]
+          lines += ["", "Findings are not included in this summary and do not fail the job. Scanner or rendering failures do fail the job.",
+                    "Cost figures use the scanner’s configured rates; they are estimates, not billing guarantees. Missing usage does not imply zero cost."]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
+              output.write("\n".join(lines) + "\n")
+          PY
