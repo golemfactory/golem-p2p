@@ -42,7 +42,7 @@ through puppet. Config `~/.ssh/p2p/ssh_config` (hosts `puppet`,
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEsXVbk0CE5gnMVGU1EqiwSLH6FnAeXNNg1dHHR2FZnV golem-p2p master (master.golemp2p.arkiv-global.net)
 ```
 
-State: **not authorized yet** (puppet answers `Permission denied (publickey)`).
+State: authorized (ssh and sudo on the host and both VMs, since 2026-11-14).
 
 ## Services
 
@@ -50,8 +50,9 @@ State: **not authorized yet** (puppet answers `Permission denied (publickey)`).
 |---|---|---|
 | golem-p2p **registry**, network `golem-testnet` | `https://registry.golemp2p.arkiv-global.net/` | up since 2026-11-15, systemd `golem-p2p-registry` on `127.0.0.1:56080`, nginx + Let's Encrypt in front |
 | golem-p2p **directory**, members only | `https://directory.golemp2p.arkiv-global.net/` | up since 2026-11-15, systemd `golem-p2p-directory` on `127.0.0.1:56081`, nginx + Let's Encrypt in front |
+| golem-p2p **testnet node** (`listen`, account `master`) | node ID `0x16d62b72e71dd73ccdd121f26b11152a5ed4b877` | up since 2026-11-15, systemd `golem-p2p-testnet-listen`, through puppet's public relay; key `~/golem-p2p-testnet/listen.key` |
 | iroh relay | | none; testnet nodes use puppet's public relay |
-| `golem-p2p listen` | | per run |
+| `golem-p2p listen` (other) | | per run |
 
 `registry.` and `directory.` are CNAMEs of `master.golemp2p.arkiv-global.net`
 (role names: they can move to another host without changing node
@@ -61,7 +62,19 @@ configuration). Registry public key (pass as `--registry-key`):
 
 Certificates are valid 1 h and renewed by the node. The registry state and
 admin token are in `~/golem-p2p-testnet/` on master (mode 0600, not in git).
-Accounts: `master` (this host's test nodes).
+The state holds the registry's signing key: losing it means a new key for
+every node, so it needs a backup off the host (not done yet).
+
+| account | registered node IDs |
+|---|---|
+| `master` | `0x16d62b72e71dd73ccdd121f26b11152a5ed4b877` (testnet node), `0x962865b3f423127ada55192512c63dc25ce73813` (`~/golem-p2p-testnet/client.key`, for `send` tests) |
+| `puppet` | `0x03b31e0e661ef73f64c8710b8486518198e81c18` (puppet's testnet node, see `nodes/puppet.md`), `0xdf54c6809fa776a3a0d11668d61ccd4330fddf76` (its `client.key`) |
+
+All units are hardened (`ProtectSystem=strict`, `ProtectHome`, no
+capabilities, `UMask=0077`). nginx limits the registry to 10 requests/s per
+client address (bursts of 100, then `429`, which nodes retry). The directory
+keeps records in memory only: after a restart of `golem-p2p-directory`,
+restart the nodes too (or wait up to 20 min until they republish).
 
 ## Checks from here
 
@@ -76,5 +89,5 @@ and IPv6.
 
 * Ubuntu 26.04 LTS, kernel 7.0, 32 CPUs, 62 GB RAM, 3.5 TB disk.
 * Rust 1.100 (default) and 1.96.0 (the toolchain CI pins).
-* `/usr/local/bin/golem-p2p` built from `bd53fd6` (closed networks).
+* `/usr/local/bin/golem-p2p` built from `f25db17` (the same binary on puppet's host).
 * Docker runs here; its bridge addresses are not reachable from outside.
