@@ -23,18 +23,34 @@ use axum::{
 
 use crate::{
     identity::NodeId,
+    membership::MembershipPolicy,
     record::{MAX_RECORD_SIZE, VerifiedRecord},
     store::{InsertOutcome, RecordStore},
 };
 
+#[derive(Clone)]
+struct Dir {
+    store: Arc<RecordStore>,
+    policy: Option<Arc<MembershipPolicy>>,
+}
+
 /// Builds the directory's HTTP routes on top of `store`.
 pub fn router(store: Arc<RecordStore>) -> Router {
+    router_with_policy(store, None)
+}
+
+/// Like [`router`]; with a policy, the directory of a closed network:
+/// records without a valid membership certificate are refused (`403`).
+pub fn router_with_policy(store: Arc<RecordStore>, policy: Option<MembershipPolicy>) -> Router {
     Router::new()
         .route("/v1/records", put(put_record))
         .route("/v1/records/{node_id}", get(get_record))
         .route("/health", get(|| async { "ok" }))
         .layer(DefaultBodyLimit::max(MAX_RECORD_SIZE))
-        .with_state(store)
+        .with_state(Dir {
+            store,
+            policy: policy.map(Arc::new),
+        })
 }
 
 /// Serves the directory on `listener` until the future is dropped.
@@ -43,6 +59,16 @@ pub fn router(store: Arc<RecordStore>) -> Router {
 pub async fn serve(
     listener: tokio::net::TcpListener,
     store: Arc<RecordStore>,
+) -> std::io::Result<()> {
+    serve_with_policy(listener, store, None).await
+}
+
+/// Like [`serve`], refusing records without a valid membership certificate
+/// of `policy`'s network, if given.
+pub async fn serve_with_policy(
+    listener: tokio::net::TcpListener,
+    store: Arc<RecordStore>,
+    policy: Option<MembershipPolicy>,
 ) -> std::io::Result<()> {
     let pruner = {
         let store = store.clone();
@@ -54,31 +80,33 @@ pub async fn serve(
             }
         })
     };
-    let res = axum::serve(listener, router(store)).await;
+    let res = axum::serve(listener, router_with_policy(store, policy)).await;
     pruner.abort();
     res
 }
 
-async fn put_record(State(store): State<Arc<RecordStore>>, body: Bytes) -> Response {
+async fn put_record(State(dir): State<Dir>, body: Bytes) -> Response {
     let rec = match VerifiedRecord::verify(&body) {
         Ok(rec) => rec,
         Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };
-    match store.insert(&rec) {
+    if let Some(p) = &dir.policy
+        && let Err(e) = p.check_record(&rec, std::time::SystemTime::now())
+    {
+        return (StatusCode::FORBIDDEN, e.to_string()).into_response();
+    }
+    match dir.store.insert(&rec) {
         InsertOutcome::Updated | InsertOutcome::Unchanged => StatusCode::NO_CONTENT.into_response(),
         InsertOutcome::Stale => (StatusCode::CONFLICT, "a newer record is stored").into_response(),
         InsertOutcome::Expired => (StatusCode::BAD_REQUEST, "record expired").into_response(),
     }
 }
 
-async fn get_record(
-    State(store): State<Arc<RecordStore>>,
-    Path(node_id): Path<String>,
-) -> Response {
+async fn get_record(State(dir): State<Dir>, Path(node_id): Path<String>) -> Response {
     let Ok(id) = node_id.parse::<NodeId>() else {
         return (StatusCode::BAD_REQUEST, "invalid node id").into_response();
     };
-    match store.resolve(&id) {
+    match dir.store.resolve(&id) {
         Some(rec) => (
             [(header::CONTENT_TYPE, "application/octet-stream")],
             rec.to_bytes().to_vec(),

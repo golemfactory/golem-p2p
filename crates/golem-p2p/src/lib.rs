@@ -56,7 +56,10 @@ mod endpoint;
 mod error;
 pub mod identity;
 pub mod lookup;
+pub mod membership;
 pub mod record;
+#[cfg(feature = "registry-server")]
+pub mod registry;
 pub mod signer;
 pub mod store;
 pub mod wire;
@@ -72,6 +75,9 @@ pub use crate::{
     },
     error::{Error, Result},
     identity::{NodeId, Signature},
+    membership::{
+        CertIssuer, IssueError, Membership, MembershipCert, MembershipError, MembershipPolicy,
+    },
     record::{NodeRecord, RecordError, VerifiedRecord},
     signer::{InMemorySigner, SignError, Signer},
     store::RecordStore,
@@ -79,3 +85,5 @@ pub use crate::{
 
 #[cfg(feature = "http-directory")]
 pub use crate::discovery::HttpDirectory;
+#[cfg(feature = "http-directory")]
+pub use crate::membership::RegistryClient;

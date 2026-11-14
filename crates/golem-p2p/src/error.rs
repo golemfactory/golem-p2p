@@ -3,6 +3,7 @@
 use crate::{
     discovery::DiscoveryError,
     identity::NodeId,
+    membership::{IssueError, MembershipError},
     record::RecordError,
     wire::{FrameError, RejectReason},
 };
@@ -35,6 +36,12 @@ pub enum Error {
     /// use TLS; plain `http` relays are not supported.
     #[error("relay URL {0} is not allowed: relay URLs must use https")]
     InsecureRelayUrl(String),
+    /// Closed network: the peer has no valid membership certificate.
+    #[error("peer is not a member of this network: {0}")]
+    NotMember(#[from] MembershipError),
+    /// Closed network: getting our own membership certificate failed.
+    #[error("membership certificate: {0}")]
+    Certify(#[from] IssueError),
     /// Binding the iroh endpoint failed.
     #[error("bind failed: {0}")]
     Bind(String),

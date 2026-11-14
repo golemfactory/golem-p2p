@@ -29,6 +29,7 @@ n0-future = "0.3"
 netwatch = "0.19.3"
 reqwest = { workspace = true, optional = true, features = ["rustls-no-provider"] }
 axum = { workspace = true, optional = true, features = ["tokio", "http1"] }
+serde_json = { version = "1", optional = true }
 
 [features]
 default = ["http-directory"]
@@ -36,6 +37,9 @@ default = ["http-directory"]
 http-directory = ["dep:reqwest"]
 ## HTTP record directory server.
 directory-server = ["dep:axum", "tokio/net"]
+## HTTP registry server of closed networks (accounts, registered nodes,
+## membership certificates).
+registry-server = ["dep:axum", "dep:serde_json", "tokio/net"]
 
 [dev-dependencies]
 iroh-relay = { workspace = true, features = ["server", "test-utils"] }
@@ -45,4 +49,4 @@ tracing-subscriber.workspace = true
 rustls-pki-types = "1"
 url.workspace = true
 axum = { workspace = true, features = ["tokio", "http1"] }
-golem-p2p = { path = ".", features = ["directory-server"] }
+golem-p2p = { path = ".", features = ["directory-server", "registry-server"] }

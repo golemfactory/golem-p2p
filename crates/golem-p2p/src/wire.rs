@@ -80,6 +80,9 @@ pub enum RejectReason {
     /// The acceptor is at its connection limit.
     #[error("too many connections")]
     Busy,
+    /// Closed network: the dialer has no valid membership certificate.
+    #[error("not a member of this network")]
+    NotMember,
 }
 
 /// Header of an application stream.
@@ -123,6 +126,9 @@ pub mod codes {
     /// it had read the whole response (the request's future was dropped, or
     /// the request failed), whether or not it had sent all of the request.
     pub const CANCELLED: VarInt = VarInt::from_u32(11);
+    /// Closed network: the peer has no valid membership certificate (or it
+    /// expired on an open connection).
+    pub const NOT_MEMBER: VarInt = VarInt::from_u32(12);
 }
 
 /// Error reading or writing frames.

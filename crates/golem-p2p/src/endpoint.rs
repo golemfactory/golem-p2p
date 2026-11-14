@@ -29,8 +29,10 @@ use crate::{
     error::{Error, Result},
     identity::NodeId,
     lookup::RecordLookup,
+    membership::{Membership, MembershipCert, MembershipError},
     record::{
         MAX_RELAYS, NodeRecord, RECORD_VERSION, RELAY_URL_SCHEME, VerifiedRecord, sign_record,
+        sign_record_with_membership,
     },
     signer::Signer,
     store::{DEFAULT_CAPACITY, RecordStore},
@@ -234,6 +236,7 @@ pub struct Builder {
     min_seq: u64,
     online_timeout: Duration,
     store_capacity: usize,
+    membership: Option<Membership>,
     config: Config,
 }
 
@@ -262,6 +265,7 @@ impl Builder {
             min_seq: 0,
             online_timeout: Duration::from_secs(5),
             store_capacity: DEFAULT_CAPACITY,
+            membership: None,
             config: Config {
                 record_ttl: Duration::from_secs(3600),
                 max_connections: 1024,
@@ -406,6 +410,21 @@ impl Builder {
         self
     }
 
+    /// Makes this endpoint part of a closed network.
+    ///
+    /// Before going online, [`Builder::bind`] gets a membership certificate
+    /// from the registry (`membership`'s issuer) and fails if the registry
+    /// refuses it. The certificate is carried in our record and renewed
+    /// halfway through its lifetime. Relays are not involved: they stay
+    /// public and only ever see encrypted traffic.
+    /// Peers without a valid certificate of this network are refused in both
+    /// directions, records without one are ignored, and connections whose
+    /// peer's certificate expires are closed. See [`crate::membership`].
+    pub fn membership(mut self, membership: Membership) -> Self {
+        self.membership = Some(membership);
+        self
+    }
+
     /// Capacity of the peer record cache.
     pub fn record_cache_capacity(mut self, n: usize) -> Self {
         self.store_capacity = n;
@@ -428,6 +447,33 @@ impl Builder {
         }
         let secret = self.secret_key.unwrap_or_else(SecretKey::generate);
         let store = Arc::new(RecordStore::new(self.store_capacity));
+        let instance_id: [u8; 16] = rand::random();
+        // Closed network: get the certificate before going online, so the
+        // first record already carries it.
+        let cert = match &self.membership {
+            Some(m) => {
+                let cert = certify(
+                    m,
+                    &secret,
+                    &*self.signer,
+                    &self.identities,
+                    instance_id,
+                    self.min_seq,
+                )
+                .await?;
+                info!(
+                    network = %m.policy.network(),
+                    expires_in_s = cert
+                        .expires_at()
+                        .duration_since(SystemTime::now())
+                        .unwrap_or_default()
+                        .as_secs(),
+                    "membership certificate received"
+                );
+                Some(cert)
+            }
+            None => None,
+        };
         let relay_map: RelayMap = self.relays.iter().cloned().collect();
         let use_relays = self.mode != TransportMode::DirectOnly && !relay_map.is_empty();
         if self.mode == TransportMode::RelayOnly && !use_relays {
@@ -486,7 +532,6 @@ impl Builder {
             .await;
         }
 
-        let instance_id: [u8; 16] = rand::random();
         let (incoming_tx, incoming_rx) = mpsc::channel(256);
         let (events, _) = broadcast::channel(256);
 
@@ -502,6 +547,7 @@ impl Builder {
             instance_id,
             self.min_seq,
             &self.config,
+            cert.as_ref(),
         )
         .await;
         let initial = match initial {
@@ -535,6 +581,8 @@ impl Builder {
             cancel: CancellationToken::new(),
             handshakes: Arc::new(tokio::sync::Semaphore::new(MAX_PENDING_HANDSHAKES)),
             relay_map,
+            membership: self.membership,
+            cert: Mutex::new(cert),
             config: self.config,
             counters: Counters::default(),
         });
@@ -549,6 +597,9 @@ impl Builder {
         tokio::spawn(address_loop(inner.clone(), addr_watch));
         if use_relays {
             tokio::spawn(relay_watchdog(inner.clone()));
+        }
+        if inner.membership.is_some() {
+            tokio::spawn(membership_loop(inner.clone()));
         }
         let guard = Arc::new(ShutdownGuard {
             cancel: inner.cancel.clone(),
@@ -608,6 +659,10 @@ struct Inner {
     cancel: CancellationToken,
     handshakes: Arc<tokio::sync::Semaphore>,
     relay_map: RelayMap,
+    /// Closed network settings, if any.
+    membership: Option<Membership>,
+    /// Our current membership certificate (closed network only).
+    cert: Mutex<Option<MembershipCert>>,
     config: Config,
     counters: Counters,
 }
@@ -652,6 +707,7 @@ async fn build_and_sign(
     instance_id: [u8; 16],
     prev_seq: u64,
     config: &Config,
+    cert: Option<&MembershipCert>,
 ) -> Result<VerifiedRecord> {
     let (relay_urls, direct_addrs) = local_addrs(iroh, config).await;
     let now = SystemTime::now()
@@ -671,7 +727,50 @@ async fn build_and_sign(
         relay_urls,
         direct_addrs,
     };
-    Ok(sign_record(&record, iroh.secret_key(), signer).await?)
+    Ok(sign_record_with_membership(
+        &record,
+        iroh.secret_key(),
+        signer,
+        cert.map(MembershipCert::to_bytes),
+    )
+    .await?)
+}
+
+/// Gets a membership certificate for `identities` from the registry. The
+/// proof is a short-lived record without addresses, signed by the endpoint
+/// key and every identity; the registry verifies it like any record.
+async fn certify(
+    m: &Membership,
+    secret: &SecretKey,
+    signer: &dyn Signer,
+    identities: &Identities,
+    instance_id: [u8; 16],
+    prev_seq: u64,
+) -> Result<MembershipCert> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let proof = NodeRecord {
+        version: RECORD_VERSION,
+        seq: (prev_seq + 1).max(now.as_micros() as u64),
+        expires_at: (now + Duration::from_secs(300)).as_secs(),
+        instance_id,
+        endpoint_id: *secret.public().as_bytes(),
+        default_id: identities.default_id(),
+        identities: identities.all(),
+        relay_urls: Vec::new(),
+        direct_addrs: Vec::new(),
+    };
+    let proof = sign_record(&proof, secret, signer).await?;
+    let bytes = m.issuer.certify(&proof).await?;
+    let cert = MembershipCert::decode(&bytes)?;
+    // Check what the registry sent like a peer would.
+    m.policy
+        .check_cert(&cert, secret.public(), SystemTime::now())?;
+    if let Some(id) = identities.all().into_iter().find(|id| !cert.covers(&[*id])) {
+        return Err(MembershipError::IdentityNotCovered(id).into());
+    }
+    Ok(cert)
 }
 
 impl Inner {
@@ -683,10 +782,41 @@ impl Inner {
         self.record_tx.borrow().clone()
     }
 
+    /// Stores a new certificate of ours; the next record carries it.
+    fn set_cert(&self, cert: MembershipCert) {
+        *self.cert.lock().expect("poisoned") = Some(cert);
+    }
+
+    /// Closed network: checks that `rec` carries a valid certificate of this
+    /// network covering all its identities. Always `Ok` in open networks.
+    fn check_member(&self, rec: &VerifiedRecord) -> std::result::Result<(), MembershipError> {
+        match &self.membership {
+            Some(m) => m.policy.check_record(rec, SystemTime::now()).map(|_| ()),
+            None => Ok(()),
+        }
+    }
+
     /// Re-signs our record, optionally with new identities, and distributes it.
     async fn update_record(&self, identities: Option<Identities>) -> Result<VerifiedRecord> {
         let mut st = self.local.lock().await;
         let ids = identities.unwrap_or_else(|| st.identities.clone());
+        let mut cert = self.cert.lock().expect("poisoned").clone();
+        if let Some(m) = &self.membership
+            && !cert.as_ref().is_some_and(|c| c.covers(&ids.all()))
+        {
+            // New identities: the registry has to cover them first.
+            let new = certify(
+                m,
+                self.iroh.secret_key(),
+                &*self.signer,
+                &ids,
+                self.instance_id,
+                st.seq,
+            )
+            .await?;
+            self.set_cert(new.clone());
+            cert = Some(new);
+        }
         let rec = build_and_sign(
             &self.iroh,
             &*self.signer,
@@ -694,6 +824,7 @@ impl Inner {
             self.instance_id,
             st.seq,
             &self.config,
+            cert.as_ref(),
         )
         .await?;
         st.identities = ids;
@@ -743,9 +874,12 @@ impl Inner {
     async fn lookup(&self, to: NodeId) -> Result<VerifiedRecord> {
         if let Some(d) = &self.discovery {
             match tokio::time::timeout(Duration::from_secs(10), d.lookup(to)).await {
-                Ok(Ok(Some(rec))) => {
-                    self.store.insert(&rec);
-                }
+                Ok(Ok(Some(rec))) => match self.check_member(&rec) {
+                    Ok(()) => {
+                        self.store.insert(&rec);
+                    }
+                    Err(e) => debug!(%to, "ignoring record from discovery: {e}"),
+                },
                 Ok(Ok(None)) => {}
                 Ok(Err(e)) => warn!(%to, "discovery lookup failed: {e}"),
                 Err(_) => warn!(%to, "discovery lookup timed out"),
@@ -918,6 +1052,10 @@ impl Inner {
             conn.close(codes::IDENTITY_MISMATCH, b"record endpoint mismatch");
             return Err(Error::IdentityMismatch);
         }
+        if let Err(e) = self.check_member(&peer) {
+            conn.close(codes::NOT_MEMBER, b"not a member");
+            return Err(e.into());
+        }
         if !peer.contains(&target) {
             conn.close(codes::UNKNOWN_IDENTITY, b"target not served");
             return Err(Error::NotPeerIdentity(target));
@@ -1007,6 +1145,11 @@ impl Inner {
                 return false;
             }
         };
+        if let Err(e) = self.check_member(&peer) {
+            debug!(peer = %peer.default_id(), "refusing connection: {e}");
+            reject(&conn, &mut send, RejectReason::NotMember, codes::NOT_MEMBER).await;
+            return false;
+        }
         let mut local_rx = self.record_tx.subscribe();
         let local = local_rx.borrow_and_update().clone();
         if let Some(t) = target
@@ -1304,6 +1447,90 @@ async fn address_loop(inner: Arc<Inner>, mut w: impl Watcher<Value = iroh::Endpo
     }
 }
 
+/// Closed network: renews our certificate halfway through its lifetime (and
+/// retries failures with backoff until it is renewed), and closes
+/// connections whose peer's certificate is no longer valid.
+async fn membership_loop(inner: Arc<Inner>) {
+    let Some(m) = inner.membership.clone() else {
+        return;
+    };
+    let mut sweep = tokio::time::interval(Duration::from_secs(5));
+    let mut backoff = RETRY_MIN;
+    let mut retry_at: Option<tokio::time::Instant> = None;
+    loop {
+        let renew_at = retry_at.unwrap_or_else(|| {
+            let cert = inner.cert.lock().expect("poisoned").clone();
+            let now = SystemTime::now();
+            let half = cert
+                .map(|c| {
+                    let life = c
+                        .expires_at()
+                        .duration_since(c.issued_at())
+                        .unwrap_or_default();
+                    (c.issued_at() + life / 2)
+                        .duration_since(now)
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+            tokio::time::Instant::now() + half
+        });
+        tokio::select! {
+            _ = inner.cancel.cancelled() => break,
+            _ = sweep.tick() => {
+                let conns: Vec<Connection> =
+                    inner.conns.lock().expect("poisoned").values().cloned().collect();
+                for c in conns {
+                    if c.is_closed() {
+                        continue;
+                    }
+                    let peer = c.peer();
+                    if let Err(e) = inner.check_member(&peer) {
+                        info!(peer = %peer.default_id(), "closing connection: {e}");
+                        c.inner.conn.close(codes::NOT_MEMBER, b"membership expired");
+                    }
+                }
+            }
+            _ = tokio::time::sleep_until(renew_at) => {
+                let (ids, seq) = {
+                    let st = inner.local.lock().await;
+                    (st.identities.clone(), st.seq)
+                };
+                let res = certify(
+                    &m,
+                    inner.iroh.secret_key(),
+                    &*inner.signer,
+                    &ids,
+                    inner.instance_id,
+                    seq,
+                )
+                .await;
+                match res {
+                    Ok(cert) => {
+                        debug!(expires_at = ?cert.expires_at(), "membership certificate renewed");
+                        inner.set_cert(cert);
+                        match inner.update_record(None).await {
+                            Ok(_) => {
+                                retry_at = None;
+                                backoff = RETRY_MIN;
+                            }
+                            Err(e) => {
+                                warn!("re-signing with the renewed certificate failed, will retry: {e}");
+                                retry_at = Some(tokio::time::Instant::now() + backoff);
+                                backoff = (backoff * 2).min(RETRY_MAX);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!("renewing the membership certificate failed, will retry: {e}");
+                        retry_at = Some(tokio::time::Instant::now() + backoff);
+                        backoff = (backoff * 2).min(RETRY_MAX);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Speeds up failover when the home relay goes down.
 ///
 /// iroh re-evaluates the preferred relay on its periodic net report (every
@@ -1431,6 +1658,11 @@ async fn control_reader(
         };
         if new.seq() <= current.seq() {
             continue;
+        }
+        if let Err(e) = inner.check_member(&new) {
+            debug!("record update without valid membership, closing connection: {e}");
+            c.inner.conn.close(codes::NOT_MEMBER, b"not a member");
+            break;
         }
         inner.store.insert(&new);
         peer_tx.send_replace(new.clone());

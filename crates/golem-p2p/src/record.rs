@@ -80,11 +80,45 @@ pub struct NodeRecord {
     pub direct_addrs: Vec<SocketAddr>,
 }
 
+/// The encoded form of a record: the signed payload, its signatures and,
+/// in closed networks, the membership certificate. The certificate is not
+/// signed by the node: the registry signs it, and it is bound to the
+/// record's endpoint and identities (see [`crate::membership`]).
 #[derive(Serialize, Deserialize)]
 struct SignedWire {
     payload: Vec<u8>,
     endpoint_sig: Vec<u8>,
     identity_sigs: Vec<Vec<u8>>,
+    /// Encoded membership certificate, empty if none.
+    membership: Vec<u8>,
+}
+
+/// The encoded form before membership certificates existed. Still accepted,
+/// as a record without a certificate.
+#[derive(Serialize, Deserialize)]
+struct LegacyWire {
+    payload: Vec<u8>,
+    endpoint_sig: Vec<u8>,
+    identity_sigs: Vec<Vec<u8>>,
+}
+
+fn decode_wire(bytes: &[u8]) -> Result<SignedWire, RecordError> {
+    if let Ok((wire, rest)) = postcard::take_from_bytes::<SignedWire>(bytes)
+        && rest.is_empty()
+    {
+        return Ok(wire);
+    }
+    let (wire, rest): (LegacyWire, _) =
+        postcard::take_from_bytes(bytes).map_err(|_| RecordError::Malformed("encoding"))?;
+    if !rest.is_empty() {
+        return Err(RecordError::Malformed("trailing bytes"));
+    }
+    Ok(SignedWire {
+        payload: wire.payload,
+        endpoint_sig: wire.endpoint_sig,
+        identity_sigs: wire.identity_sigs,
+        membership: Vec::new(),
+    })
 }
 
 /// Why a record was rejected.
@@ -192,6 +226,7 @@ struct Inner {
     record: NodeRecord,
     endpoint_id: EndpointId,
     bytes: Vec<u8>,
+    membership: Vec<u8>,
 }
 
 impl PartialEq for VerifiedRecord {
@@ -212,11 +247,7 @@ impl VerifiedRecord {
         if bytes.len() > MAX_RECORD_SIZE {
             return Err(RecordError::Malformed("record too large"));
         }
-        let (wire, rest): (SignedWire, _) =
-            postcard::take_from_bytes(bytes).map_err(|_| RecordError::Malformed("encoding"))?;
-        if !rest.is_empty() {
-            return Err(RecordError::Malformed("trailing bytes"));
-        }
+        let wire = decode_wire(bytes)?;
         let (record, rest): (NodeRecord, _) = postcard::take_from_bytes(&wire.payload)
             .map_err(|_| RecordError::Malformed("payload encoding"))?;
         if !rest.is_empty() {
@@ -259,8 +290,15 @@ impl VerifiedRecord {
                 record,
                 endpoint_id,
                 bytes: bytes.to_vec(),
+                membership: wire.membership,
             }),
         })
+    }
+
+    /// The encoded membership certificate the record carries, if any. It is
+    /// only decoded and checked by a [`MembershipPolicy`](crate::membership::MembershipPolicy).
+    pub fn membership(&self) -> Option<&[u8]> {
+        (!self.inner.membership.is_empty()).then_some(self.inner.membership.as_slice())
     }
 
     /// Returns the verified record content.
@@ -346,6 +384,16 @@ pub async fn sign_record(
     endpoint_key: &SecretKey,
     signer: &dyn Signer,
 ) -> Result<VerifiedRecord, RecordError> {
+    sign_record_with_membership(record, endpoint_key, signer, None).await
+}
+
+/// Like [`sign_record`], attaching an encoded membership certificate.
+pub async fn sign_record_with_membership(
+    record: &NodeRecord,
+    endpoint_key: &SecretKey,
+    signer: &dyn Signer,
+    membership: Option<&[u8]>,
+) -> Result<VerifiedRecord, RecordError> {
     if record.endpoint_id != *endpoint_key.public().as_bytes() {
         return Err(RecordError::Malformed(
             "endpoint id does not match endpoint key",
@@ -363,6 +411,7 @@ pub async fn sign_record(
         payload,
         endpoint_sig,
         identity_sigs,
+        membership: membership.map(<[u8]>::to_vec).unwrap_or_default(),
     };
     let bytes = postcard::to_allocvec(&wire).map_err(|_| RecordError::Malformed("encoding"))?;
     VerifiedRecord::verify(&bytes)
@@ -387,6 +436,7 @@ pub mod testing {
                 .iter()
                 .map(|s| s.as_bytes().to_vec())
                 .collect(),
+            membership: Vec::new(),
         };
         postcard::to_allocvec(&wire).expect("encode")
     }
@@ -398,7 +448,7 @@ pub mod testing {
 
     /// Splits an encoded record into payload, endpoint signature and identity signatures.
     pub fn decode_raw(bytes: &[u8]) -> (NodeRecord, Vec<u8>, Vec<Vec<u8>>) {
-        let wire: SignedWire = postcard::from_bytes(bytes).expect("decode");
+        let wire = decode_wire(bytes).expect("decode");
         let record = postcard::from_bytes(&wire.payload).expect("decode");
         (record, wire.endpoint_sig, wire.identity_sigs)
     }
