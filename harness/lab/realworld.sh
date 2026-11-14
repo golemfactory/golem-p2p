@@ -30,7 +30,10 @@ LAB_HOST=${GPL_HOST:-p2p-natlab}
 REMOTE_DIR=${GPL_REMOTE_DIR:-golem-p2p-lab}
 RELAY_HOST=${GPL_RELAY_HOST:-p2p-relay1}
 PUBLIC_IP=${GPL_RELAY_PUBLIC_IP:-213.163.75.157}
-REAL_RELAY=${GPL_REAL_RELAY:-https://$PUBLIC_IP:56000}
+# The relay serves QUIC address discovery on UDP 56001, not iroh's default 7842
+# (as in lab.sh). Without ,quic=56001 the local node's QAD probe goes to 7842,
+# is dropped, and bind waits for its 3 s timeout before the first request.
+REAL_RELAY=${GPL_REAL_RELAY:-https://$PUBLIC_IP:56000,quic=56001}
 REAL_CA=${GPL_REAL_RELAY_CA_SRC:-$HOME/.ssh/p2p/p2p-relay1.crt}
 DIR_PORT=${GPL_RW_DIR_PORT:-56050}
 REFL_PORTS=${GPL_RW_REFL_PORTS:-56090,56091}
