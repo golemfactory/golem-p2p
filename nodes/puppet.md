@@ -128,6 +128,30 @@ DNS for the VMs: the bridge's dnsmasq has `no-hosts` and sends
 resolve `puppet.golemp2p.arkiv-global.net` to `213.163.75.157` (before, the
 host's `/etc/hosts` leaked through and gave them loopback addresses).
 
+## Testnet
+
+Installed by master on 2026-11-15 for the closed testnet `golem-testnet`
+(registry and directory on master, see `nodes/master.md`). Nothing else on
+the host, its relays, `p2p-hostnat` or the VMs was changed.
+
+| | |
+|---|---|
+| service | systemd `golem-p2p-testnet-listen` on the host (not in a VM): `golem-p2p listen` (echo and bulk) in network `golem-testnet`, relay `https://puppet.golemp2p.arkiv-global.net:56002,quic=56003`, hardened unit (`ProtectSystem=strict`, `ProtectHome=read-only`, no capabilities) |
+| binary | `/usr/local/bin/golem-p2p`, built on master from `f25db17` |
+| node ID | `0x03b31e0e661ef73f64c8710b8486518198e81c18` (key `~/golem-p2p-testnet/listen.key`, mode 0600) |
+| account | `puppet`; token in `~/golem-p2p-testnet/puppet.token` (mode 0600, directory 0700). Registered: the listener and `0xdf54c6809fa776a3a0d11668d61ccd4330fddf76` (`client.key`, for `send` tests) |
+| outsider | `~/golem-p2p-testnet/outsider.key` (`0x0fc81f1d…`), deliberately not registered, for refusal tests |
+
+The host's `/etc/hosts` maps `puppet.golemp2p.arkiv-global.net` to
+`127.0.1.1` and `::1`, where the public relay is not, so a node on the host
+cannot reach the relay by its name. The service therefore gets a private
+hosts file (`~/golem-p2p-testnet/hosts`, mounted over `/etc/hosts` with
+`BindReadOnlyPaths`) that maps the name to `213.163.75.157`. golem-p2p run
+by hand on the host needs the same, for example:
+
+    sudo unshare -m sh -c 'mount --bind /home/ubuntu/golem-p2p-testnet/hosts /etc/hosts &&
+        exec setpriv --reuid=ubuntu --regid=ubuntu --init-groups golem-p2p send ...'
+
 ## Machine
 
 * Bare metal at i3D: AMD EPYC 4464P (12 cores, 24 threads, AMD-V), 122 GiB
