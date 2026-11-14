@@ -93,8 +93,8 @@ struct SignedWire {
     membership: Vec<u8>,
 }
 
-/// The encoded form before membership certificates existed. Still accepted,
-/// as a record without a certificate.
+/// The encoded form without a membership certificate: the original format,
+/// still written for records without one (older nodes can read it).
 #[derive(Serialize, Deserialize)]
 struct LegacyWire {
     payload: Vec<u8>,
@@ -103,8 +103,11 @@ struct LegacyWire {
 }
 
 fn decode_wire(bytes: &[u8]) -> Result<SignedWire, RecordError> {
+    // One encoding per record: the form with a certificate must carry a
+    // non-empty one (otherwise "legacy record + a 0 byte" would also parse).
     if let Ok((wire, rest)) = postcard::take_from_bytes::<SignedWire>(bytes)
         && rest.is_empty()
+        && !wire.membership.is_empty()
     {
         return Ok(wire);
     }
@@ -407,13 +410,22 @@ pub async fn sign_record_with_membership(
         let sig = signer.sign(*id, digest).await?;
         identity_sigs.push(sig.as_bytes().to_vec());
     }
-    let wire = SignedWire {
-        payload,
-        endpoint_sig,
-        identity_sigs,
-        membership: membership.map(<[u8]>::to_vec).unwrap_or_default(),
-    };
-    let bytes = postcard::to_allocvec(&wire).map_err(|_| RecordError::Malformed("encoding"))?;
+    // Without a certificate, keep the original encoding, so that records of
+    // open networks stay readable by older nodes.
+    let bytes = match membership {
+        Some(m) if !m.is_empty() => postcard::to_allocvec(&SignedWire {
+            payload,
+            endpoint_sig,
+            identity_sigs,
+            membership: m.to_vec(),
+        }),
+        _ => postcard::to_allocvec(&LegacyWire {
+            payload,
+            endpoint_sig,
+            identity_sigs,
+        }),
+    }
+    .map_err(|_| RecordError::Malformed("encoding"))?;
     VerifiedRecord::verify(&bytes)
 }
 
@@ -429,14 +441,13 @@ pub mod testing {
         endpoint_sig: [u8; 64],
         identity_sigs: Vec<Signature>,
     ) -> Vec<u8> {
-        let wire = SignedWire {
+        let wire = LegacyWire {
             payload: postcard::to_allocvec(record).expect("encode"),
             endpoint_sig: endpoint_sig.to_vec(),
             identity_sigs: identity_sigs
                 .iter()
                 .map(|s| s.as_bytes().to_vec())
                 .collect(),
-            membership: Vec::new(),
         };
         postcard::to_allocvec(&wire).expect("encode")
     }
