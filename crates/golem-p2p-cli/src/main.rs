@@ -508,6 +508,11 @@ async fn main() -> ExitCode {
                 .unwrap_or_else(|_| default_filter.into()),
         )
         .with_writer(std::io::stderr)
+        // No color codes in files and the journal; NO_COLOR as usual.
+        .with_ansi(
+            std::io::IsTerminal::is_terminal(&std::io::stderr())
+                && std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty()),
+        )
         .init();
     let out = Out::new(cli.output.json, cli.output.run_id, cli.output.node_name);
     match run(cli.cmd, &out).await {
