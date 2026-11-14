@@ -20,6 +20,20 @@ stay out of the summary and logs, and never fail the job. Operational failures
 do fail it. If generation fails, the artifact may contain only the scan plan;
 unavailable usage is not evidence of zero API cost. No automatic retries run.
 
+Successful manual runs on `main` also publish the report to
+<https://golemfactory.github.io/golem-p2p/>. This is a **public** GitHub Pages
+site. The latest HTML report is served at the site root, with `report.json`
+and `scan-plan.json` alongside it. Each deployment replaces the previous site;
+older reports remain in Actions artifacts for their retention period. Failed
+scans leave the published report unchanged. Runs on other branches still
+produce downloadable artifacts but do not publish to Pages.
+
+Pages must use **GitHub Actions** as its publishing source in repository
+settings. Only the separate deployment job receives `pages: write` and
+`id-token: write`; it has no API key or source checkout. The scan job retains
+read-only repository permissions. The deployment summary links to the live
+report. Publishing does not add model calls or alter the scan limits.
+
 To dispatch from the command line:
 
 ```sh

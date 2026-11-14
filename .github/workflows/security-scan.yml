@@ -121,3 +121,43 @@ jobs:
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
               output.write("\n".join(lines) + "\n")
           PY
+
+      - name: Prepare public Pages report
+        if: ${{ success() && github.ref == 'refs/heads/main' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/security-scan-site"
+          cp "$REPORT_DIR/report.html" "$RUNNER_TEMP/security-scan-site/index.html"
+          cp "$REPORT_DIR/report.json" "$RUNNER_TEMP/security-scan-site/report.json"
+          cp "$REPORT_DIR/scan-plan.json" "$RUNNER_TEMP/security-scan-site/scan-plan.json"
+
+      - name: Upload Pages site
+        if: ${{ success() && github.ref == 'refs/heads/main' }}
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: ${{ runner.temp }}/security-scan-site
+
+  deploy:
+    name: Publish report to GitHub Pages
+    needs: scan
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Deploy latest report
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+
+      - name: Link published report
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          printf '## Published security report\n\n[Open HTML report](%s) · [Download JSON](%sreport.json)\n\nThis public site shows the latest successful manual scan on main.\n' "$PAGE_URL" "$PAGE_URL" >> "$GITHUB_STEP_SUMMARY"
