@@ -25,6 +25,10 @@ relay-based networking in yagna (`ya-relay`).
   `virbr*`, ...) are left out: no peer can reach them.
 * **Discovery:** a `Discovery` trait from node ID to verified record, with an
   in-memory implementation and an HTTP directory (client and server).
+* **Closed networks (optional):** a registry where accounts register node
+  IDs and which issues short-lived membership certificates; nodes (and
+  optionally the directory) refuse peers without one. Relays stay public.
+  See [docs/design.md](docs/design.md), section 13a.
 
 ## Status
 
@@ -39,7 +43,7 @@ design, the decisions taken, and the open questions.
 
 ```
 crates/golem-p2p       core library
-crates/golem-p2p-cli   `golem-p2p` command line tool (directory, listen, send, probe, bench, soak)
+crates/golem-p2p-cli   `golem-p2p` command line tool (directory, registry, listen, send, probe, bench, soak)
 docs/design.md         design document
 docs/cli-events.md     JSON events of the CLI (`--json`), for test harnesses
 harness/               NAT lab, benchmark campaigns, soak tests and their results
@@ -70,6 +74,7 @@ What the tests cover:
 | `identity_changes.rs` | default switch with and without restart; A to B to A with and without restart; alias added and removed at runtime; locked key blocks updates; restart with a persisted endpoint key; a failed re-sign (locked key) and a failed publish (directory down) are retried |
 | `security.rs` | forged record from a directory; stale record replay; record listing an identity that did not sign it; valid record presented over another endpoint's connection (both directions); spoofed stream sender and receiver; new instance superseding a live old connection; duplicate record updates paced |
 | `encryption.rs` | peers offering another ALPN refused in the TLS handshake; a relay (plain HTTP behind a recording TLS-terminating proxy) sees endpoint IDs but neither a plaintext marker nor the Ethereum identities; non-https relay URLs rejected by the builder; a signed record with an `http://` relay refused and never dialed |
+| `closed_network.rs` | registry over HTTP: registered members connect both ways; an outsider gets no certificate, and without one is refused by members (`NotMember`) and ignored in lookups; accounts: admin-only creation, no takeover or removal of another account's node, removing an account removes its nodes, certification follows registrations; a new alias needs registration first; offline certificate checks (untrusted key, key rotation, other network, other endpoint, expiry with clock tolerance, too long a lifetime, tampering) |
 | `soak.rs` | many short-lived clients against one server, and one client against many short-lived servers: the connection table, connect slots, dial locks, handshakes and queued streams return to idle (`Endpoint::stats`); failed connects (unknown and dead peers) leave nothing behind. Ignored by default, minutes each (`--ignored`, `GOLEM_P2P_SOAK_CYCLES`, `GOLEM_P2P_SOAK_MINUTES`): thousands of sessions direct and through a relay, many small and large requests on one connection, idle nodes with and without QUIC address discovery, checking that tasks, file descriptors and the heap in use do not grow with sessions, requests or time |
 | `crash_restart.rs` (CLI) | real process killed with SIGKILL and restarted with the same identity, homed on an https relay with a self-signed certificate (`--relay-ca`) |
 | `relay_url.rs` (CLI) | `http://` and other non-https relay URLs rejected on the command line |

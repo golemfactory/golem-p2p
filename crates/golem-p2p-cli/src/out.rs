@@ -207,6 +207,8 @@ pub fn error_kind(e: &golem_p2p::Error) -> &'static str {
         E::Connect(_) => "connect",
         E::Handshake(_) | E::IdentityMismatch => "handshake",
         E::Rejected(_) => "rejected",
+        E::NotMember(_) => "not_member",
+        E::Certify(_) => "membership",
         E::StreamRejected(_) => "stream_rejected",
         E::Connection(_) => "connection",
         E::Frame(_) => "protocol",

@@ -211,7 +211,9 @@ error), `bulk`, `refused` (a listener limit refused an upload or download),
 library error kinds: `not_found` (no record for the node
 ID in any directory), `timeout`, `connect`, `connection`, `handshake`,
 `rejected`, `stream_rejected`, `not_peer_identity`, `identity`, `record`,
-`discovery`, `bind`, `config`, `protocol`, `too_large`, `closed`.
+`discovery`, `bind`, `config`, `protocol`, `too_large`, `closed`, and in
+closed networks `not_member` (the peer has no valid membership certificate)
+and `membership` (the registry refused or could not issue our certificate).
 
 ### `bench_phase` (bench)
 

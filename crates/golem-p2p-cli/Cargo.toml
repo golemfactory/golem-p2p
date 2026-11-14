@@ -12,7 +12,7 @@ name = "golem-p2p"
 path = "src/main.rs"
 
 [dependencies]
-golem-p2p = { workspace = true, features = ["directory-server", "http-directory"] }
+golem-p2p = { workspace = true, features = ["directory-server", "http-directory", "registry-server"] }
 anyhow.workspace = true
 clap.workspace = true
 hex.workspace = true

@@ -637,6 +637,60 @@ hangs.
 
 GSB integration itself is out of scope for this seed.
 
+## 13a. Closed networks (registry and membership certificates)
+
+A testnet must not accept nodes from outside. golem-p2p can run as a
+**closed network**: only nodes whose Ethereum identities are registered in
+the network's registry can talk to each other. It is opt-in
+(`Builder::membership`, CLI `--registry URL --registry-key HEX --network
+NAME`); without it nothing changes.
+
+**Who decides.** The registry (`golem-p2p registry serve`, module
+`registry`) holds the network's ed25519 signing key, accounts and registered
+node IDs. The administrator creates accounts (`registry account add NAME`,
+which hands out a random token); an account registers and removes its own
+node IDs (`registry node add 0x..`). Tokens are stored as SHA-256 hashes; the
+state is one JSON file, mode 0600.
+
+**The certificate.** A node proves to the registry that it owns its endpoint
+key and every identity by sending a normal signed record (a short-lived one
+without addresses), `POST /v1/certify`. If every identity is registered, the
+registry answers with a certificate: network name, endpoint ID, identities,
+issue and expiry time, signed by the registry key. Nodes never hold an account
+token. The certificate is carried in the record's encoding next to the node's
+signatures (field `membership` of the wire form; older records without the
+field still decode, as records without a certificate). It is not signed by
+the node: it is self-authenticating and bound to the endpoint and identities.
+
+**Who checks.** Every node checks every peer offline against the registry's
+public key (`MembershipPolicy`): a valid signature by a trusted key, the same
+network, the record's endpoint, every listed identity covered, not expired
+(with the usual 5 min clock tolerance). This happens in both handshake
+directions (incoming: `Reject(NotMember)`, close code 12), on record updates
+over a connection, and on records from discovery (ignored without a valid
+certificate). A sweep every 5 s closes connections whose peer's certificate
+is no longer valid. A directory started with `--registry-key` refuses records
+without a valid certificate (`403`), so outsiders cannot even be looked up.
+
+**Relays stay public and unmodified.** They are not part of the check: they
+only forward end-to-end encrypted traffic, and a node that is not a member is
+refused by every member, over a relay or directly. Restricting relays (e.g.
+iroh-relay's `shared_token` or `http` access modes) is possible later but not
+needed to close the network.
+
+**Renewal and removal.** Certificates live 1 h by default (`registry init
+--cert-lifetime`). The node renews halfway through, re-signs its record with
+the new certificate and pushes it to connected peers and the directory;
+failures are retried with backoff. Adding an alias first gets a certificate
+covering it (and fails if it is not registered). Removing a node only stops
+renewal: it keeps access until its certificate expires (at most the lifetime
+plus the clock tolerance). The registry does not need to be reachable for
+existing members to keep talking until then; new nodes and renewals need it.
+
+Tests: `closed_network.rs` (members connect, outsiders refused both ways,
+accounts own their nodes, a new alias needs registration, certificate
+checks).
+
 ## 14. Not implemented or not tested yet
 
 * Real NAT traversal across different networks (tests use loopback only).
@@ -646,6 +700,11 @@ GSB integration itself is out of scope for this seed.
 * Directory rate limiting per client, and authentication for publishing.
 * Relay authentication tokens: can be passed with
   `Builder::relay_config(RelayConfig::new(..).with_auth_token(..))`, not tested.
+  Not needed for closed networks (section 13a), where relays stay public.
+* Closed networks: the registry speaks plain HTTP (run it behind a TLS
+  proxy); no rate limiting; no test yet of a certificate expiring on a live
+  connection (the 5 min clock tolerance makes it slow to test); registry key
+  rotation is supported by `MembershipPolicy::with_key` but has no CLI.
 * Persisting `seq` (the API exists via `min_seq` and `local_record().seq()`).
 * Datagram and unidirectional streams (disabled: 0 uni streams).
 * Metrics beyond what iroh exports and `Endpoint::stats` (sizes of the

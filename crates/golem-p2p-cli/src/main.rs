@@ -23,6 +23,7 @@ mod observe;
 mod out;
 mod parse;
 mod probe;
+mod registry;
 mod soak;
 
 use std::{
@@ -37,8 +38,9 @@ use std::{
 use anyhow::{Context, anyhow, bail};
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use golem_p2p::{
-    Builder, Discovery, Endpoint, HttpDirectory, Identities, InMemorySigner, MultiDiscovery,
-    NodeId, RecordStore, TransportMode, iroh::tls::CaTlsConfig,
+    Builder, Discovery, Endpoint, HttpDirectory, Identities, InMemorySigner, Membership,
+    MembershipPolicy, MultiDiscovery, NodeId, RecordStore, RegistryClient, TransportMode,
+    iroh::tls::CaTlsConfig,
 };
 use rustls_pki_types::{CertificateDer, pem::PemObject};
 use serde_json::json;
@@ -91,6 +93,13 @@ enum Cmd {
         /// Address to listen on.
         #[arg(long, default_value = "127.0.0.1:8080")]
         listen: SocketAddr,
+        /// Closed network: accept only records with a valid membership
+        /// certificate of this registry key (hex, from `registry init`).
+        #[arg(long, value_name = "HEX")]
+        registry_key: Option<String>,
+        /// Closed network name (with `--registry-key`).
+        #[arg(long, default_value = "golem-testnet")]
+        network: String,
         /// With `--json`, emit a `stats` event (process resources, stored
         /// records) this often.
         #[arg(long, value_parser = parse::duration)]
@@ -152,6 +161,12 @@ enum Cmd {
     /// Exit code: 0 if every request succeeded, 1 if none did or setup
     /// failed, 2 for invalid arguments, 3 if some requests or uploads failed.
     Soak(soak::SoakArgs),
+    /// Registry of a closed network: accounts, registered node IDs and
+    /// membership certificates.
+    Registry {
+        #[command(subcommand)]
+        cmd: registry::RegistryCmd,
+    },
 }
 
 /// Server-side limits of `listen` for uploads and downloads.
@@ -208,6 +223,23 @@ struct NodeArgs {
     /// Directory URL. Repeat for several directories.
     #[arg(long, required = true)]
     directory: Vec<url::Url>,
+    /// Closed network: registry URL. The node gets its membership
+    /// certificate there before going online (its identities must be
+    /// registered) and accepts only peers with a valid certificate.
+    #[arg(long, requires = "registry_key", env = "GOLEM_P2P_REGISTRY")]
+    registry: Option<url::Url>,
+    /// Closed network: the registry's public key (hex), to check peers'
+    /// certificates.
+    #[arg(
+        long,
+        value_name = "HEX",
+        requires = "registry",
+        env = "GOLEM_P2P_REGISTRY_KEY"
+    )]
+    registry_key: Option<String>,
+    /// Closed network name.
+    #[arg(long, default_value = "golem-testnet", env = "GOLEM_P2P_NETWORK")]
+    network: String,
     /// UDP address to bind (default: all interfaces, random port).
     #[arg(long)]
     bind: Option<SocketAddr>,
@@ -337,7 +369,19 @@ fn builder(
     if let Some(t) = timeout {
         b = b.connect_timeout(t).request_timeout(t);
     }
+    if let (Some(url), Some(key)) = (&args.registry, &args.registry_key) {
+        let policy = MembershipPolicy::new(args.network.clone(), parse_registry_key(key)?);
+        b = b.membership(Membership::new(policy, RegistryClient::new(url.clone())?));
+    }
     Ok(b)
+}
+
+/// A registry public key in hex.
+fn parse_registry_key(hex_key: &str) -> anyhow::Result<golem_p2p::iroh::PublicKey> {
+    let mut b = [0u8; 32];
+    hex::decode_to_slice(hex_key.trim().trim_start_matches("0x"), &mut b)
+        .context("registry key must be 64 hex characters")?;
+    golem_p2p::iroh::PublicKey::from_bytes(&b).context("invalid registry key")
 }
 
 /// Binds an endpoint. `timeout` sets the connect and request timeouts.
@@ -435,7 +479,7 @@ fn stop_signal() -> impl Fn() -> std::pin::Pin<Box<dyn Future<Output = ()> + Sen
 }
 
 /// Resolves on SIGINT or SIGTERM.
-async fn shutdown_signal() {
+pub(crate) async fn shutdown_signal() {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};
@@ -500,8 +544,14 @@ async fn run(cmd: Cmd, out: &Out) -> anyhow::Result<ExitCode> {
         }
         Cmd::Directory {
             listen,
+            registry_key,
+            network,
             stats_interval,
         } => {
+            let policy = match registry_key {
+                Some(k) => Some(MembershipPolicy::new(network, parse_registry_key(&k)?)),
+                None => None,
+            };
             let listener = tokio::net::TcpListener::bind(listen).await?;
             let url = format!("http://{}/", listener.local_addr()?);
             if out.json() {
@@ -513,7 +563,7 @@ async fn run(cmd: Cmd, out: &Out) -> anyhow::Result<ExitCode> {
             let _stats = stats_interval
                 .map(|i| soak::spawn_stats(out, i, soak::StatsSource::Directory(store.clone())));
             tokio::select! {
-                r = golem_p2p::directory::serve(listener, store) => r?,
+                r = golem_p2p::directory::serve_with_policy(listener, store, policy) => r?,
                 _ = shutdown_signal() => {}
             }
         }
@@ -613,6 +663,7 @@ async fn run(cmd: Cmd, out: &Out) -> anyhow::Result<ExitCode> {
         Cmd::Probe(args) => return run_probe(args, out).await,
         Cmd::Bench(args) => return bench::run(args, out).await,
         Cmd::Soak(args) => return soak::run(args, out).await,
+        Cmd::Registry { cmd } => registry::run(cmd, out).await?,
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -695,7 +746,7 @@ async fn run_probe(args: ProbeArgs, out: &Out) -> anyhow::Result<ExitCode> {
     })
 }
 
-fn write_secret(path: &PathBuf, contents: &str) -> anyhow::Result<()> {
+pub(crate) fn write_secret(path: &PathBuf, contents: &str) -> anyhow::Result<()> {
     use std::io::Write;
     let mut opts = std::fs::OpenOptions::new();
     opts.write(true).create_new(true);
