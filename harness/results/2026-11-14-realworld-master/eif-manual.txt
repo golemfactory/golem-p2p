@@ -1,0 +1,6 @@
+LAB_PROFILE=full-cone
+full-cone: received (b'from-master', ('65.109.154.126', 56467))
+LAB_PROFILE=port-restricted
+port-restricted: TimeoutError: timed out
+LAB_PROFILE=full-cone
+full-cone: received (b'from-master', ('65.109.154.126', 37258))

@@ -1,0 +1,4 @@
+run=1 listener=local sender=real1 ok=1 replies=799 t_first=0.38 first_ms=119 first_path=direct t_direct=0.38 last_path=direct switches=0 direct_pct=100 relay_ms=- direct_ms=37 error=-
+run=1 listener=real1 sender=local ok=1 replies=789 t_first=0.77 first_ms=175 first_path=relay t_direct=0.85 last_path=direct switches=1 direct_pct=100 relay_ms=37 direct_ms=37 listener_saw=direct:787,relay:3 error=-
+run=1 listener=local sender=real2 ok=1 replies=797 t_first=0.37 first_ms=114 first_path=relay t_direct=0.41 last_path=direct switches=1 direct_pct=100 relay_ms=- direct_ms=37 error=-
+run=1 listener=real2 sender=local ok=1 replies=861 t_first=0.79 first_ms=174 first_path=relay t_direct=0.86 last_path=direct switches=1 direct_pct=100 relay_ms=37 direct_ms=33 listener_saw=direct:859,relay:3 error=-

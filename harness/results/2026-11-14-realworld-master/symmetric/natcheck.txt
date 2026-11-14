@@ -1,0 +1,6 @@
+natcheck node=real1 try=1 filtering=APDF local=192.168.1.2:33935 mapped=213.163.75.157:9140,213.163.75.157:29337,213.163.75.157:29846 mapping=APDM port_preserved=no unmapped_inbound=no unsolicited=-
+natcheck node=real1 try=2 filtering=APDF local=192.168.1.2:59252 mapped=213.163.75.157:40009,213.163.75.157:61343,213.163.75.157:63466 mapping=APDM port_preserved=no unmapped_inbound=no unsolicited=-
+natcheck node=real1 try=3 filtering=APDF local=192.168.1.2:51412 mapped=213.163.75.157:64333,213.163.75.157:60924,213.163.75.157:2353 mapping=APDM port_preserved=no unmapped_inbound=no unsolicited=-
+natcheck node=real2 try=1 filtering=APDF local=192.168.2.2:44159 mapped=213.163.75.157:29798,213.163.75.157:11723,213.163.75.157:7010 mapping=APDM port_preserved=no unmapped_inbound=no unsolicited=-
+natcheck node=real2 try=2 filtering=APDF local=192.168.2.2:47065 mapped=213.163.75.157:33749,213.163.75.157:21361,213.163.75.157:38794 mapping=APDM port_preserved=no unmapped_inbound=no unsolicited=-
+natcheck node=real2 try=3 filtering=APDF local=192.168.2.2:56611 mapped=213.163.75.157:49570,213.163.75.157:26521,213.163.75.157:64558 mapping=APDM port_preserved=no unmapped_inbound=no unsolicited=-

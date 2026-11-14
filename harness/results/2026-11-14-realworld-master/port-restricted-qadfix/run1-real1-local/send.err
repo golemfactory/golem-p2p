@@ -1,0 +1,2 @@
+2026-11-14T22:22:31.556659Z  INFO golem_p2p::endpoint: golem-p2p endpoint bound node_id=0xbd11d55be3a27a066407b295e4d0c513c9ceabfe endpoint_id=75ca63e0df
+2026-11-14T22:22:31.846372Z  INFO golem_p2p::observe: path changed peer=0xc4d67e7d2518171ac410618c0c17938bbd1491c0 from="relay" to="direct" remote_addr="213.163.75.157:16422"

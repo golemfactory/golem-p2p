@@ -1,0 +1,9 @@
+realworld: starting directory on p2p-relay1:56050
+READY node_id=0x5f1ee61ea227a22611d6a96090b6e24db12beed3 identities=0x5f1ee61ea227a22611d6a96090b6e24db12beed3 endpoint_id=fc0eeb9d1755967c748947912c6798114b8b72bddb5999108d6ffdd0353a1913 relays=["https://213.163.75.157:56000/"] addrs=[65.109.154.126:32787, [2a01:4f9:3080:1146::2]:60194]
+run=1 listener=local sender=real1 ok=1 replies=799 t_first=0.38 first_ms=119 first_path=direct t_direct=0.38 last_path=direct switches=0 direct_pct=100 relay_ms=- direct_ms=37 error=-
+run=1 listener=real1 sender=local ok=1 replies=789 t_first=0.77 first_ms=175 first_path=relay t_direct=0.85 last_path=direct switches=1 direct_pct=100 relay_ms=37 direct_ms=37 listener_saw=direct:787,relay:3 error=-
+READY node_id=0x5f1ee61ea227a22611d6a96090b6e24db12beed3 identities=0x5f1ee61ea227a22611d6a96090b6e24db12beed3 endpoint_id=4b63654bc13bdaad7920ef5e723bde2330fecfb5a070078df25b0bf2e97a5d30 relays=["https://213.163.75.157:56000/"] addrs=[65.109.154.126:59593, [2a01:4f9:3080:1146::2]:44686]
+run=1 listener=local sender=real2 ok=1 replies=797 t_first=0.37 first_ms=114 first_path=relay t_direct=0.41 last_path=direct switches=1 direct_pct=100 relay_ms=- direct_ms=37 error=-
+run=1 listener=real2 sender=local ok=1 replies=861 t_first=0.79 first_ms=174 first_path=relay t_direct=0.86 last_path=direct switches=1 direct_pct=100 relay_ms=37 direct_ms=33 listener_saw=direct:859,relay:3 error=-
+realworld: results in harness/results/2026-11-14-realworld-master/port-restricted-qadfix/results.txt
+realworld: cleaned up (local processes, lab listeners, relay VM units)

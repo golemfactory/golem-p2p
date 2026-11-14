@@ -1,0 +1,12 @@
+run=1 listener=local sender=real1 ok=1 replies=877 t_first=0.37 first_ms=111 first_path=direct t_direct=0.37 last_path=direct switches=0 direct_pct=100 relay_ms=- direct_ms=33 error=-
+run=1 listener=real1 sender=local ok=1 replies=720 t_first=3.38 first_ms=168 first_path=relay t_direct=3.41 last_path=direct switches=1 direct_pct=100 relay_ms=- direct_ms=37 listener_saw=direct:719,relay:2 error=-
+run=1 listener=local sender=real2 ok=1 replies=799 t_first=0.37 first_ms=113 first_path=relay t_direct=0.44 last_path=direct switches=1 direct_pct=100 relay_ms=34 direct_ms=37 error=-
+run=1 listener=real2 sender=local ok=1 replies=715 t_first=3.38 first_ms=169 first_path=relay t_direct=3.41 last_path=direct switches=1 direct_pct=100 relay_ms=- direct_ms=37 listener_saw=direct:714,relay:2 error=-
+run=2 listener=local sender=real1 ok=1 replies=798 t_first=0.38 first_ms=122 first_path=direct t_direct=0.38 last_path=direct switches=0 direct_pct=100 relay_ms=- direct_ms=37 error=-
+run=2 listener=real1 sender=local ok=1 replies=780 t_first=3.37 first_ms=164 first_path=relay t_direct=3.40 last_path=direct switches=1 direct_pct=100 relay_ms=- direct_ms=34 listener_saw=direct:779,relay:2 error=-
+run=2 listener=local sender=real2 ok=1 replies=874 t_first=0.37 first_ms=112 first_path=direct t_direct=0.37 last_path=direct switches=0 direct_pct=100 relay_ms=- direct_ms=33 error=-
+run=2 listener=real2 sender=local ok=1 replies=785 t_first=3.39 first_ms=170 first_path=relay t_direct=3.42 last_path=direct switches=1 direct_pct=100 relay_ms=- direct_ms=33 listener_saw=direct:784,relay:2 error=-
+run=3 listener=local sender=real1 ok=1 replies=797 t_first=0.38 first_ms=124 first_path=relay t_direct=0.42 last_path=direct switches=1 direct_pct=100 relay_ms=- direct_ms=37 error=-
+run=3 listener=real1 sender=local ok=1 replies=778 t_first=3.38 first_ms=165 first_path=relay t_direct=3.41 last_path=direct switches=1 direct_pct=100 relay_ms=- direct_ms=34 listener_saw=direct:777,relay:2 error=-
+run=3 listener=local sender=real2 ok=1 replies=873 t_first=0.37 first_ms=112 first_path=direct t_direct=0.37 last_path=direct switches=0 direct_pct=100 relay_ms=- direct_ms=33 error=-
+run=3 listener=real2 sender=local ok=1 replies=785 t_first=3.40 first_ms=175 first_path=relay t_direct=3.47 last_path=direct switches=1 direct_pct=100 relay_ms=37 direct_ms=33 listener_saw=direct:783,relay:3 error=-
