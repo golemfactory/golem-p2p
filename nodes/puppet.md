@@ -1,6 +1,6 @@
 # puppet
 
-**Updated:** 2026-11-14
+**Updated:** 2026-11-15
 
 ## Role
 
@@ -142,15 +142,11 @@ the host, its relays, `p2p-hostnat` or the VMs was changed.
 | account | `puppet`; token in `~/golem-p2p-testnet/puppet.token` (mode 0600, directory 0700). Registered: the listener and `0xdf54c6809fa776a3a0d11668d61ccd4330fddf76` (`client.key`, for `send` tests) |
 | outsider | `~/golem-p2p-testnet/outsider.key` (`0x0fc81f1d…`), deliberately not registered, for refusal tests |
 
-The host's `/etc/hosts` maps `puppet.golemp2p.arkiv-global.net` to
-`127.0.1.1` and `::1`, where the public relay is not, so a node on the host
-cannot reach the relay by its name. The service therefore gets a private
-hosts file (`~/golem-p2p-testnet/hosts`, mounted over `/etc/hosts` with
-`BindReadOnlyPaths`) that maps the name to `213.163.75.157`. golem-p2p run
-by hand on the host needs the same, for example:
-
-    sudo unshare -m sh -c 'mount --bind /home/ubuntu/golem-p2p-testnet/hosts /etc/hosts &&
-        exec setpriv --reuid=ubuntu --regid=ubuntu --init-groups golem-p2p send ...'
+Since 2026-11-15 the host's `/etc/hosts` maps
+`puppet.golemp2p.arkiv-global.net` (and `puppet`) to `213.163.75.157`, not
+to loopback, so golem-p2p on the host reaches both relays by name. The
+service's private hosts file (`BindReadOnlyPaths`) is no longer used, and
+manual runs need no workaround.
 
 ## Machine
 
