@@ -13,13 +13,13 @@ numbers, to Haiku 5.5 (`claude-haiku-5-5`), and gets a typed review back
 evidence, fix and what needs validating). The model has no shell,
 filesystem, web or other tools; the response schema is all it gets.
 
-| Scope | Files | Input tokens (approx.) |
+| Scope | Files | Input tokens (measured) |
 |---|---|---|
-| `records` | record, identity, signer, store, directory | 30,000 |
-| `handshake` | endpoint, wire, error | 42,000 |
-| `closed-network` | membership, registry (library and CLI), discovery, lookup | 27,000 |
-| `cli-servers` | the CLI's listen server, published addresses (addrs) | 16,000 |
-| `all` (default) | each of the above, one request per area | 115,000 |
+| `records` | record, identity, signer, store, directory | 33,000 |
+| `handshake` | endpoint, wire, error | 45,000 |
+| `closed-network` | membership, registry (library and CLI), discovery, lookup | 28,000 |
+| `cli-servers` | the CLI's listen server, published addresses (addrs) | 18,000 |
+| `all` (default) | each of the above, one request per area | 124,000 |
 
 Limits per request: input 60,000 tokens (counted before sending, well below
 the 100,000 tokens where Haiku's price per token rises fivefold), output
@@ -46,6 +46,60 @@ The prompt includes the one-line results of the deterministic checks of the
 same revision (`--checks`, JSON lines written by `harness/security-check.sh`),
 so that the model does not report dependency or workflow issues again; the
 report shows those checks in their own section.
+
+## What the runs of 2026-11-15 showed
+
+Eleven runs, about $0.11 in total by the configured rates. Benchmarks used
+`source_ref` to review revisions that still had a known bug:
+
+| Bug (revision) | No thinking | Low | Medium |
+|---|---|---|---|
+| Record expiry overflow panic (01c6d10, `records`) | found 2 of 2, rated low | missed 1 of 1 | found 3 of 3, rated high |
+| Handshake slot held by rejected dialers (9911b1d, `handshake`) | missed 2 of 2 | – | found 2 of 2, rated high |
+
+The first scan of 2026-11-14 (the old prompt, no thinking) had missed the
+overflow too. Hence the default: all areas, medium thinking, about $0.026
+per run (124,000 input and 27,000 to 29,000 output tokens, thinking
+included); one area with medium thinking costs $0.006 to $0.009, without
+thinking about $0.004.
+
+Fixed after these runs, each with a test that failed before:
+`cc5d1a0` (expiry overflow; found by hand before, then by the scan),
+`9911b1d` (a withdrawn identity resolved again once the withdrawing record
+was evicted or expired), `87bf426` (an identity whose entry was evicted
+resolved to a replayed older record), `883612e` and `1d2d30d` (rejected
+dialers held handshake slots for 2 s; the waits are now bounded),
+`7ad9104` (certificates with appended bytes decoded), `e3862a1` (peer bytes
+in `listen` debug logs could forge lines), `4b60c3e` (unbounded registry
+management answers).
+
+Reported and not changed, for a decision or as known limits:
+
+* Registry: any account can register a node ID it does not own, first come
+  first served, which blocks the owner (and the squatter can later remove
+  it). Proof of possession at registration (a signature by the node's key)
+  would fix it; it changes the registry API.
+* Handshake slots: a peer that connects and never sends its Hello holds one
+  of the 128 slots until the handshake timeout (10 s), so about 13 such
+  connections per second keep other incoming connections out. A shorter
+  deadline for the Hello, or a per-address limit for direct connections,
+  needs measurements on slow relayed links first.
+* Store and directory: valid records cost nothing to make, so a flood of
+  long-lived records evicts honest ones (docs/design.md, section 6), and
+  every directory PUT costs up to 17 signature checks. Rate limits belong in
+  the proxy in front of a public directory.
+* The membership certificate is not covered by the record signatures:
+  whoever relays a record can strip it. Members never store a record without
+  a valid certificate, and a members-only directory refuses it, but in an
+  open directory the stripped copy can shadow the original at the same
+  sequence number until the node publishes again.
+* `listen` (the test server) does not bound concurrent echo requests (up to
+  1 MiB each), only uploads and downloads.
+
+Typical false positives: missing checks that another file makes (the
+`RECORD_FACTS` context now names those for records), overflow in arithmetic
+on the local clock, and limits that QUIC flow control or the connection cap
+already bound.
 
 ## Manual GitHub Action
 

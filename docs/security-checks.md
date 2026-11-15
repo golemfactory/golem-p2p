@@ -7,8 +7,10 @@ Two workflows look at security:
   every Monday (advisory databases change while the code does not), and by
   hand. No API keys; the token is read-only.
 * **Security scan · Haiku** (`.github/workflows/security-scan.yml`): a
-  bounded LLM review of selected source files. Manual only, because it costs
-  money. See `harness/security-scan.md`.
+  bounded LLM review of the library's source, area by area. Manual only,
+  because it costs money (about $0.03 per run). It calls the deterministic
+  workflow first and shows its results in the same report. See
+  `harness/security-scan.md`.
 
 ## What the deterministic checks cover
 
@@ -54,6 +56,7 @@ Current ignores:
 | Ignore | Why |
 |---|---|
 | RUSTSEC-2024-0436 (`paste` unmaintained) | Compile-time proc-macro of `netlink-packet-core` 0.8, used by iroh 1.4.1 through `netwatch`; nothing of it runs at run time, and there is no successor release in that line. Remove when iroh moves on. |
+| zizmor `self-repository` on the `uses: ./.github/workflows/security.yml` line of security-scan.yml | zizmor prefers the newer `$/` form, which actionlint 1.7.12 does not know yet. |
 
 ## Running the checks locally
 
