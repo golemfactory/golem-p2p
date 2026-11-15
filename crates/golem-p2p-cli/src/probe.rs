@@ -561,6 +561,60 @@ pub fn count_wait(upload_time: Duration, rtt: Option<Duration>) -> Duration {
     COUNT_WAIT.max(upload_time).max(rtts).min(COUNT_WAIT_MAX)
 }
 
+/// Waits for an upload's count (`count`, the read of the listener's reply)
+/// until `until`, and past it as long as the upload is still being
+/// delivered: while `received` (the bytes the connection has received, i.e.
+/// the listener's acknowledgments of what is still on its way) grew in the
+/// last `window`, the wait goes on, a `window` at a time, up to `cap`.
+/// `None` if the count did not come.
+///
+/// [`count_wait`] assumes that what is still queued drains at least as fast
+/// as the upload went. On a lossy link the tail can be much slower: in
+/// benchmark campaign 5 (debug/lossy-extra run 5, 1 % loss) an upload written
+/// completely gave up waiting for its count 13.6 s after it started, and the
+/// listener had all 10 MB 0.9 s later.
+async fn await_count<T>(
+    count: impl Future<Output = T>,
+    until: Instant,
+    window: Duration,
+    cap: Instant,
+    received: impl Fn() -> Option<u64>,
+) -> Option<T> {
+    tokio::pin!(count);
+    let now = Instant::now();
+    let mut check = until.max(now).min(cap.max(now));
+    // The counter is read one window before each check (or now).
+    let mut base = None;
+    let mut sample_at = check.checked_sub(window).filter(|&t| t > now);
+    if sample_at.is_none() {
+        base = received();
+    }
+    loop {
+        let wake = sample_at.unwrap_or(check);
+        tokio::select! {
+            r = &mut count => return Some(r),
+            () = tokio::time::sleep_until(wake.into()) => {}
+        }
+        if sample_at.take().is_some() {
+            base = received();
+            continue;
+        }
+        let got = received();
+        let moving = matches!((base, got), (Some(a), Some(b)) if b > a);
+        if !moving || check >= cap {
+            return None;
+        }
+        base = got;
+        check = (check + window).min(cap);
+    }
+}
+
+/// Bytes received so far on the connection to `to` (QUIC's UDP counter),
+/// if there is one.
+fn received_bytes(ep: &Endpoint, to: NodeId) -> Option<u64> {
+    connection_to(ep, to).map(|c| c.iroh_connection().stats().udp_rx.bytes)
+}
+
 /// Megabits (10^6 bits) per second.
 pub fn mbps(bytes: u64, elapsed: Duration) -> f64 {
     bytes as f64 * 8.0 / elapsed.as_secs_f64().max(1e-9) / 1e6
@@ -569,12 +623,14 @@ pub fn mbps(bytes: u64, elapsed: Duration) -> f64 {
 /// Uploads up to `max_bytes` to the listener's sink in one stream and waits
 /// for its count. With `max_time`, writing ends then: whatever is not yet
 /// delivered is dropped (the stream is reset with [`UPLOAD_STOPPED`]), and
-/// the listener reports what arrived until then (waiting at most
-/// [`count_wait`] more for that, else [`NoCount`]). An upload written
-/// completely before `max_time` is not stopped: what the stream buffered is
-/// still on its way, and the listener counts it once it has arrived, which
-/// on a slow path can be after `max_time`. Its count is awaited until
-/// `max_time`, or [`count_wait`] after the write if that is later.
+/// the listener reports what arrived until then (waiting [`count_wait`]
+/// more for that, else [`NoCount`]). An upload written completely before
+/// `max_time` is not stopped: what the stream buffered is still on its way,
+/// and the listener counts it once it has arrived, which on a slow path can
+/// be after `max_time`. Its count is awaited until `max_time`, or
+/// [`count_wait`] after the write if that is later. Either wait goes on
+/// while the listener still acknowledges data (see [`await_count`]), at
+/// most [`COUNT_WAIT_MAX`].
 ///
 /// [`Transfer::second_half_mbps`] is the rate at which the stream took the
 /// bytes in the second half of writing. Flow control lets it run at most a
@@ -619,13 +675,17 @@ pub async fn upload(
         // need be (see above).
         Some(Ok(())) => match deadline {
             Some(d) => {
-                let now = tokio::time::Instant::now();
-                let until = d.max(now + count_wait(start.elapsed(), path_rtt(ep, to)));
-                match tokio::time::timeout_at(until, recv.read_to_end(4096)).await {
-                    Ok(r) => r?,
-                    Err(_) => {
+                let now = Instant::now();
+                let until = d
+                    .into_std()
+                    .max(now + count_wait(start.elapsed(), path_rtt(ep, to)));
+                let count = recv.read_to_end(4096);
+                let received = || received_bytes(ep, to);
+                match await_count(count, until, COUNT_WAIT, now + COUNT_WAIT_MAX, received).await {
+                    Some(r) => r?,
+                    None => {
                         return Err(NoCount {
-                            wait: until - now,
+                            wait: now.elapsed(),
                             stopped: false,
                         }
                         .into());
@@ -644,12 +704,15 @@ pub async fn upload(
         // Cut off by the time limit: stop; the listener counts what arrived.
         None => {
             let _ = send.reset(UPLOAD_STOPPED);
-            let wait = count_wait(start.elapsed(), path_rtt(ep, to));
-            match tokio::time::timeout(wait, recv.read_to_end(4096)).await {
-                Ok(r) => r?,
-                Err(_) => {
+            let now = Instant::now();
+            let until = now + count_wait(start.elapsed(), path_rtt(ep, to));
+            let count = recv.read_to_end(4096);
+            let received = || received_bytes(ep, to);
+            match await_count(count, until, COUNT_WAIT, now + COUNT_WAIT_MAX, received).await {
+                Some(r) => r?,
+                None => {
                     return Err(NoCount {
-                        wait,
+                        wait: now.elapsed(),
                         stopped: true,
                     }
                     .into());
@@ -953,6 +1016,76 @@ mod tests {
         });
         assert_eq!(transfer_error_kind(&e, "transfer"), "no_count");
         assert!(e.to_string().starts_with("sent the whole upload"), "{e}");
+    }
+
+    /// A counter of received bytes that grows with time until `until`.
+    fn arriving(t0: Instant, until: Duration) -> impl Fn() -> Option<u64> {
+        move || Some(t0.elapsed().min(until).as_millis() as u64)
+    }
+
+    /// `await_count` with a base wait of 100 ms, a 50 ms window and a cap
+    /// at `cap_ms`, from now; returns its result and how long it took.
+    async fn wait_count<T>(
+        count: impl Future<Output = T>,
+        cap_ms: u64,
+        received: impl Fn() -> Option<u64>,
+    ) -> (Option<T>, Duration) {
+        let ms = Duration::from_millis;
+        let t0 = Instant::now();
+        let r = await_count(count, t0 + ms(100), ms(50), t0 + ms(cap_ms), received).await;
+        (r, t0.elapsed())
+    }
+
+    fn assert_between(d: Duration, lo_ms: u64, hi_ms: u64) {
+        let ms = Duration::from_millis;
+        assert!(d >= ms(lo_ms) && d < ms(hi_ms), "{d:?}");
+    }
+
+    /// The count comes after the base wait, while the listener still
+    /// acknowledges data: it is awaited (it used to fail as `no_count`).
+    #[tokio::test]
+    async fn count_awaited_while_the_upload_is_delivered() {
+        let count = async {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            "sink_bytes=10"
+        };
+        let t0 = Instant::now();
+        let (r, took) = wait_count(count, 2000, arriving(t0, Duration::from_secs(10))).await;
+        assert_eq!(r, Some("sink_bytes=10"));
+        assert_between(took, 300, 600);
+    }
+
+    /// Once nothing arrives for a window after the base wait, the wait ends.
+    #[tokio::test]
+    async fn count_not_awaited_once_nothing_arrives() {
+        let never = std::future::pending::<()>;
+        // Data arrives until 150 ms: the checks at 100 and 150 ms see it
+        // grow, the one at 200 ms does not.
+        let t0 = Instant::now();
+        let (r, took) = wait_count(never(), 2000, arriving(t0, Duration::from_millis(150))).await;
+        assert_eq!(r, None);
+        assert_between(took, 200, 450);
+        // Nothing arrives at all, or there is no connection: the base wait.
+        let (r, took) = wait_count(never(), 2000, || Some(7)).await;
+        assert_eq!(r, None);
+        assert_between(took, 100, 350);
+        let (r, took) = wait_count(never(), 2000, || None).await;
+        assert_eq!(r, None);
+        assert_between(took, 100, 350);
+    }
+
+    /// Never past the cap, also if data keeps arriving; a count that is
+    /// already there is returned at once.
+    #[tokio::test]
+    async fn count_wait_capped() {
+        let t0 = Instant::now();
+        let never = std::future::pending::<()>();
+        let (r, took) = wait_count(never, 300, arriving(t0, Duration::from_secs(10))).await;
+        assert_eq!(r, None);
+        assert_between(took, 300, 550);
+        let (r, took) = wait_count(async { 1 }, 300, || None).await;
+        assert_eq!(r, Some(1));
+        assert_between(took, 0, 50);
     }
 
     #[test]

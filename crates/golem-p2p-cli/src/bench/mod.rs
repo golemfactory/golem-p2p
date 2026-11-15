@@ -584,7 +584,8 @@ impl PeerBench<'_> {
             fmt_dur(args.transfer_time)
         ));
         // A safety net: the transfers end at the time limit themselves (an
-        // upload then waits for the listener's count, see `count_wait`).
+        // upload then waits for the listener's count, see `count_wait` and
+        // `await_count`, at most `COUNT_WAIT_MAX`).
         let limit = args.transfer_time + probe::COUNT_WAIT_MAX + Duration::from_secs(1);
         let before = QuicSnapshot::to(ep, self.to);
         let run = async {

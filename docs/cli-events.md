@@ -581,7 +581,11 @@ brackets):
    slow path can be after the time limit; the bench waits for that count
    until the time limit, or, if that ends later, as long as it would after a
    stop, counted from the end of writing (`no_count` if it does not come
-   either). A download stops reading (one whose bytes had all arrived counts
+   either). Both waits go on while the upload is still being delivered: as
+   long as the connection received data (the listener's acknowledgments) in
+   the last 3 s, at most 30 s after the stop or the end of writing (on a
+   lossy link the last stream window can take much longer than the upload's
+   average pace). A download stops reading (one whose bytes had all arrived counts
    as complete, also if the end of the stream had not). Throughput is the
    bytes over the time from opening the stream to the listener's count (upload) or
    to the last byte (download). `second_half_mbps` is the throughput in the
