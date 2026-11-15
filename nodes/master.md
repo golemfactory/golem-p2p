@@ -38,6 +38,7 @@ tests master uses **56000-56099** tcp and udp, the same range as puppet:
 | port | use | state |
 |---|---|---|
 | udp 56090 | reflector (`harness/lab/tools/reflector.py`) for `realworld.sh --natcheck --natcheck-local-port 56090` and puppet's reachability check | up, systemd `gpl-master-reflector`, stops by itself on 2026-11-21 |
+| tcp 56080, 56081, 56082 (127.0.0.1 only) | registry, directory, telemetry collector, behind nginx | up |
 | other 56000-56099 | listeners, a second relay later | free; closed in ufw (open one with `sudo ufw allow <port>/udp` when a test needs it reachable) |
 
 ## Access to puppet
@@ -59,11 +60,12 @@ State: authorized (ssh and sudo on the host and both VMs, since 2026-11-14).
 |---|---|---|
 | golem-p2p **registry**, network `golem-testnet` | `https://registry.golemp2p.arkiv-global.net/` | up since 2026-11-15, systemd `golem-p2p-registry` on `127.0.0.1:56080`, nginx + Let's Encrypt in front |
 | golem-p2p **directory**, members only | `https://directory.golemp2p.arkiv-global.net/` | up since 2026-11-15, systemd `golem-p2p-directory` on `127.0.0.1:56081`, nginx + Let's Encrypt in front |
+| golem-p2p **telemetry** collector and dashboard | `https://telemetry.golemp2p.arkiv-global.net/` | up since 2026-11-15, systemd `golem-p2p-telemetry` on `127.0.0.1:56082`, nginx + Let's Encrypt in front; see below |
 | golem-p2p **testnet node** (`listen`, account `master`) | node ID `0x16d62b72e71dd73ccdd121f26b11152a5ed4b877` | up since 2026-11-15, systemd `golem-p2p-testnet-listen`, through puppet's public relay; key `~/golem-p2p-testnet/listen.key` |
 | iroh relay | | none; testnet nodes use puppet's public relay |
 | `golem-p2p listen` (other) | | per run |
 
-`registry.` and `directory.` are CNAMEs of `master.golemp2p.arkiv-global.net`
+`registry.`, `directory.` and `telemetry.` are CNAMEs of `master.golemp2p.arkiv-global.net`
 (role names: they can move to another host without changing node
 configuration). Registry public key (pass as `--registry-key`):
 
@@ -85,6 +87,27 @@ registry logs every issued certificate (`journalctl -u golem-p2p-registry`). ngi
 client address (bursts of 100, then `429`, which nodes retry). The directory
 keeps records in memory only: after a restart of `golem-p2p-directory`,
 restart the nodes too (or wait up to 20 min until they republish).
+
+**Telemetry** ([docs/telemetry.md](../docs/telemetry.md)). The registry
+runs with `--telemetry-url https://telemetry.golemp2p.arkiv-global.net/`, so
+every testnet `listen` and `soak` reports there every 5 s unless started
+with `--no-telemetry`. The collector (`golem-p2p telemetry serve`, unit
+`golem-p2p-telemetry`, hardened like the others, writes only its store)
+keeps 5 s samples for an hour and per-minute samples for 7 days in
+`~/golem-p2p-testnet/telemetry/` (0700). nginx (site `golem-p2p-testnet`,
+certificate `golem-p2p-telemetry`): `POST /v1/report` is open (reports are
+signed by members; at most 10/s per address, bursts of 40); everything
+else (dashboard, `/v1/state`, `/v1/history`, `/metrics`) needs HTTP basic
+auth, user `golem`, password in
+`~/golem-p2p-testnet/telemetry-dashboard.credentials` (0600, not in git;
+nginx has only the hash, `/etc/nginx/golem-p2p-telemetry.htpasswd`). A
+restart of the collector keeps the history (it reloads its store); a node
+missing for more than 60 s shows as offline. Checked on 2026-11-15 after the
+deploy: master's testnet node reports (found through the registry); a
+temporary `soak` with `client.key` against it appeared online with a direct
+link reported by both ends, and was offline (stopped) at once after it
+exited; without credentials the dashboard and `/metrics` answer `401`, an
+unsigned report `401`.
 
 ## Checks from here
 
@@ -108,13 +131,16 @@ and IPv6.
 
 * Ubuntu 26.04 LTS, kernel 7.0, 32 CPUs, 62 GB RAM, 3.5 TB disk.
 * Rust 1.100 (default) and 1.96.0 (the toolchain CI pins).
-* `/usr/local/bin/golem-p2p` built from `e2ff75b` (crates of `31c954c`) with
-  Rust 1.96.0, sha256 `cc4a151b…6bb6544`: iroh **1.5.0** from the
-  golemfactory/iroh fork (rev `4ad24ac2`, branch `relay-recovery`), netwatch
-  0.20. Deployed 2026-11-15 11:29 UTC (registry, directory, testnet listener);
-  the same binary runs on puppet's host (`golem-p2p-testnet-listen`) and was
-  the one measured in benchmark campaign 5
-  (`harness/results/2026-11-15-campaign5/`).
+* `/usr/local/bin/golem-p2p` built from `fe28c40` (telemetry) with Rust
+  1.96.0, sha256 `5dcc22db…3fa9f2e`: iroh **1.5.0** from the golemfactory/iroh
+  fork (rev `4ad24ac2`, branch `relay-recovery`), netwatch 0.20. Deployed
+  2026-11-15 21:00 UTC (registry, directory, testnet listener, telemetry
+  collector). The directory's records of registered nodes were saved before
+  its restart and published again right after it, so puppet's node stayed
+  findable. The previous build (`e2ff75b`, sha256 `cc4a151b…6bb6544`, the one
+  measured in benchmark campaign 5, `harness/results/2026-11-15-campaign5/`,
+  and still on puppet's host) is kept as
+  `/usr/local/bin/golem-p2p.prev-e2ff75b`.
 * iroh-relay 1.5.0 from the same fork rev, built here
   (`~/golemfactory/iroh/target/release/iroh-relay`), not run as a service on
   master; a debug-stripped copy is the lab's own relay on `p2p-natlab` since
