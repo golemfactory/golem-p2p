@@ -11,7 +11,7 @@ use std::{
 use common::*;
 use golem_p2p::{
     Discovery, DiscoveryError, Endpoint, Error, Identities, InMemorySigner, MemoryDiscovery,
-    MultiDiscovery, NodeId, TransportMode, VerifiedRecord,
+    MultiDiscovery, NodeId, RecordError, TransportMode, VerifiedRecord,
     iroh::{
         self, RelayMode, SecretKey,
         endpoint::{Connection, presets},
@@ -548,6 +548,108 @@ async fn duplicate_record_updates_are_paced() {
         assert_eq!(victim.connections().len(), 1);
 
         conn.close(codes::OK, b"");
+        attacker.close().await;
+        victim.close().await;
+    })
+    .await;
+}
+
+/// Sends `body` to a directory's `PUT /v1/records` over plain HTTP/1.1 and
+/// returns the status code, or 0 if the server closed the connection without
+/// an answer.
+async fn put_raw(dir: &url::Url, body: &[u8]) -> u16 {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let host = format!("{}:{}", dir.host_str().unwrap(), dir.port().unwrap());
+    let mut stream = tokio::net::TcpStream::connect(&host).await.unwrap();
+    let head = format!(
+        "PUT /v1/records HTTP/1.1\r\nHost: {host}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    stream.write_all(head.as_bytes()).await.unwrap();
+    stream.write_all(body).await.unwrap();
+    let mut response = Vec::new();
+    let _ = stream.read_to_end(&mut response).await;
+    String::from_utf8_lossy(&response)
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+        .unwrap_or(0)
+}
+
+/// A record whose expiry is at the end of the `u64` range is refused as
+/// expired wherever an unauthenticated record arrives: in a handshake, by a
+/// directory, and from a directory. Validation used to add the clock skew to
+/// it unchecked, which panicked before any signature was checked; the
+/// handshake then ended without an answer and the directory dropped the
+/// request.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn extreme_expiry_rejected_without_panic() {
+    with_timeout(60, async {
+        let net = TestNet::new(0).await;
+        let signer = InMemorySigner::new();
+        let v = signer.generate();
+        let victim = net.node(&signer, Identities::new(v), direct()).await;
+
+        let attacker_signer = InMemorySigner::new();
+        let m = attacker_signer.generate();
+        let key = SecretKey::generate();
+        let attacker = raw_endpoint(key.clone()).await;
+        let mut rec = raw_record(&key, &attacker, &[m]);
+        rec.expires_at = u64::MAX;
+        let d = testing::digest(&rec);
+        let sm = attacker_signer.sign_blocking(m, &d).unwrap();
+        let signed = testing::encode_raw(&rec, key.sign(&d).to_bytes(), vec![sm]);
+        let unsigned = testing::encode_raw(&rec, [0; 64], vec![]);
+        for bytes in [&signed, &unsigned] {
+            assert_eq!(VerifiedRecord::verify(bytes), Err(RecordError::Expiry));
+        }
+
+        // Handshake: an explicit rejection, and the victim keeps working.
+        let (reply, conn) = hello(&attacker, &victim, signed.clone()).await;
+        assert!(
+            matches!(
+                reply,
+                Some(Control::Reject {
+                    reason: RejectReason::InvalidRecord
+                })
+            ),
+            "{reply:?}"
+        );
+        conn.close(codes::OK, b"");
+        assert!(victim.connections().is_empty());
+
+        // Directory: 400 for both, and it keeps serving.
+        let dir = TestDirectory::spawn().await;
+        assert_eq!(put_raw(&dir.url, &signed).await, 400);
+        assert_eq!(put_raw(&dir.url, &unsigned).await, 400);
+        let client = dir.client();
+        client.publish(&victim.local_record()).await.unwrap();
+        assert_eq!(
+            client.lookup(v).await.unwrap().unwrap(),
+            victim.local_record()
+        );
+
+        // A directory serving the record: the lookup fails cleanly.
+        let app = axum::Router::new().route(
+            "/v1/records/{id}",
+            axum::routing::get(move || {
+                let signed = signed.clone();
+                async move { signed }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let evil =
+            golem_p2p::HttpDirectory::new(format!("http://{addr}/").parse().unwrap()).unwrap();
+        assert!(matches!(
+            evil.lookup(m).await,
+            Err(DiscoveryError::InvalidRecord(_))
+        ));
+
+        server.abort();
         attacker.close().await;
         victim.close().await;
     })

@@ -342,6 +342,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn replay_does_not_restore_withdrawn_identity() {
+        // Anyone holding the old signed record can replay it; the identity it
+        // lists stays withdrawn, in a store that saw the withdrawal and in one
+        // that receives the records out of order.
+        let s = InMemorySigner::new();
+        let (a, b) = (s.generate(), s.generate());
+        let mut n = Node::new(&s);
+        let r1 = n.record(&[a], 3600).await;
+        let r2 = n.record(&[b], 3600).await;
+
+        let store = RecordStore::default();
+        store.insert(&r1);
+        store.insert(&r2);
+        assert!(store.resolve(&a).is_none());
+        for _ in 0..2 {
+            assert_ne!(store.insert(&r1), InsertOutcome::Updated);
+            assert!(store.resolve(&a).is_none());
+            assert_eq!(store.resolve(&b), Some(r2.clone()));
+        }
+
+        // Out of order, `a` gets an entry (nothing newer is stored under
+        // it), but the endpoint's newer record still withdraws it.
+        let store = RecordStore::default();
+        store.insert(&r2);
+        store.insert(&r1);
+        assert!(store.resolve(&a).is_none());
+        assert_eq!(store.resolve(&b), Some(r2));
+    }
+
+    #[tokio::test]
     async fn bounded() {
         let s = InMemorySigner::new();
         let store = RecordStore::new(8);

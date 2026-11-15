@@ -349,6 +349,14 @@ dial every address it lists.
   When full, expired entries go first, then those that expire soonest, 1 %
   of the capacity at a time (a full directory store of 100 000 records does
   not scan all of them on every insert).
+* The bound protects memory, not availability. Making a valid record costs
+  nothing (a fresh endpoint key and identity), so whoever can publish to a
+  directory of an open network can fill it with long-lived records and evict
+  honest ones, which expire sooner. Nodes republish, and lookups fall back to
+  other discovery services, but a flood can hide nodes for a while. A closed
+  network's directory (`--registry-key`) only stores records with a valid
+  membership certificate, which limits this to members; rate limiting
+  per client belongs in the TLS proxy in front of a public directory.
 
 ## 7. Connections and wire protocol
 

@@ -203,8 +203,11 @@ impl NodeRecord {
             return Err(RecordError::Malformed("too many direct addresses"));
         }
         let now = now_since_epoch(now);
+        // `expires_at` is unauthenticated input at this point: saturate, an
+        // expiry at the end of the u64 range must not overflow (and panic).
         let expires = Duration::from_secs(self.expires_at);
-        if expires + MAX_CLOCK_SKEW < now || expires > now + MAX_TTL + MAX_CLOCK_SKEW {
+        if expires.saturating_add(MAX_CLOCK_SKEW) < now || expires > now + MAX_TTL + MAX_CLOCK_SKEW
+        {
             return Err(RecordError::Expiry);
         }
         if u128::from(self.seq) > (now + MAX_CLOCK_SKEW).as_micros() {
@@ -593,6 +596,28 @@ mod tests {
             sign_record(&r, &key, &signer).await,
             Err(RecordError::FutureSeq)
         );
+
+        // Expiries at the end of the u64 range are an ordinary expiry error,
+        // signed or not. (Adding the clock skew to them overflowed and
+        // panicked, before any signature was checked.)
+        for expires_at in [u64::MAX, u64::MAX - 1, u64::MAX / 2, 0] {
+            let mut r = base(&key, &[a]);
+            r.expires_at = expires_at;
+            let d = digest(&r);
+            let signed = encode_raw(
+                &r,
+                key.sign(&d).to_bytes(),
+                vec![signer.sign_blocking(a, &d).unwrap()],
+            );
+            let unsigned = encode_raw(&r, [0; 64], vec![]);
+            for bytes in [signed, unsigned] {
+                assert_eq!(
+                    VerifiedRecord::verify(&bytes),
+                    Err(RecordError::Expiry),
+                    "{expires_at}"
+                );
+            }
+        }
 
         // A valid record is rejected once it has expired.
         let rec = sign_record(&base(&key, &[a]), &key, &signer).await.unwrap();
