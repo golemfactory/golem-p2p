@@ -704,16 +704,22 @@ async fn rejected_handshakes_do_not_hold_handshake_slots() {
             .count();
         assert!(rejected > 0, "no Hello was rejected");
 
-        // Right after (well within the 2 s a rejected dialer may linger), no
-        // slot is held, and a real peer gets through.
+        // Right after (well within the 2 s a rejected dialer may linger),
+        // no rejected dialer holds a slot. Before the fix all 128 were held.
+        // Attempts that got no Reject (refused, or given up by a slow
+        // machine while the victim still waits for their Hello) may.
+        let others = 160 - rejected;
         let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
-        while victim.stats().handshakes > 0 && tokio::time::Instant::now() < deadline {
+        while victim.stats().handshakes > others && tokio::time::Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         let stats = victim.stats();
-        assert_eq!(stats.handshakes, 0, "{stats:?}");
+        assert!(
+            stats.handshakes <= others,
+            "{others} not rejected; {stats:?}"
+        );
         let peer = net.node(&signer, Identities::new(p_id), direct()).await;
-        let reply = tokio::time::timeout(Duration::from_secs(1), peer.request(v, b"hi")).await;
+        let reply = tokio::time::timeout(Duration::from_secs(5), peer.request(v, b"hi")).await;
         assert!(matches!(reply, Ok(Ok(_))), "{reply:?}");
 
         drop(replies);

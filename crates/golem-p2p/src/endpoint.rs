@@ -6,7 +6,7 @@ use std::{
     net::SocketAddr,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -1365,17 +1365,29 @@ struct OpenStream {
     received: u64,
 }
 
+/// Rejected connections waiting for the dialer to close, in this process.
+static LINGERING: AtomicUsize = AtomicUsize::new(0);
+/// Beyond this many, rejected connections are closed at once.
+const MAX_LINGERING: usize = 256;
+
 async fn reject(conn: &IrohConnection, send: &mut SendStream, reason: RejectReason, code: VarInt) {
     let _ = wire::write_frame(send, &Control::Reject { reason }).await;
     let _ = send.finish();
     // Give the dialer a moment to read the reason before closing. Not in the
     // handshake itself: a dialer that never closes would hold a handshake
     // slot for that time, and a few dozen of them per second would keep
-    // everyone else out.
+    // everyone else out. Bounded: under a flood of rejected dialers, close
+    // at once (the close code still says why).
+    if LINGERING.fetch_add(1, Ordering::Relaxed) >= MAX_LINGERING {
+        LINGERING.fetch_sub(1, Ordering::Relaxed);
+        conn.close(code, b"rejected");
+        return;
+    }
     let conn = conn.clone();
     tokio::spawn(async move {
         let _ = tokio::time::timeout(Duration::from_secs(2), conn.closed()).await;
         conn.close(code, b"rejected");
+        LINGERING.fetch_sub(1, Ordering::Relaxed);
     });
 }
 
