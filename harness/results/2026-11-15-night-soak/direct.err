@@ -1,0 +1,3 @@
+2026-11-15T01:40:55.329722Z  INFO golem_p2p::endpoint: membership certificate received network=golem-testnet expires_in_s=3599
+2026-11-15T01:40:55.841993Z  INFO golem_p2p::endpoint: golem-p2p endpoint bound node_id=0x962865b3f423127ada55192512c63dc25ce73813 endpoint_id=72ade5f840
+2026-11-15T06:40:56.043408Z  WARN golem_p2p::endpoint: publishing record failed: discovery service holds a newer record
