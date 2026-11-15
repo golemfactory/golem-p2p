@@ -17,6 +17,9 @@
 //! pass the certificate with `--relay-ca`. `--json` prints machine-readable
 //! events, one JSON object per line, as described in `docs/cli-events.md`.
 
+// The only unsafe code is the glibc heap statistics call in `soak`.
+#![deny(unsafe_code)]
+
 mod bench;
 mod listen;
 mod observe;

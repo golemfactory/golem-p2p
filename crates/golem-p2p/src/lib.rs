@@ -47,6 +47,7 @@
 //! ```
 
 #![warn(missing_docs)]
+#![forbid(unsafe_code)]
 
 mod addrs;
 #[cfg(feature = "directory-server")]

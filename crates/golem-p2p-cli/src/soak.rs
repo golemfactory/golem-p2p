@@ -617,6 +617,7 @@ pub fn proc_stats() -> Value {
 /// keeps for reuse. Growth of the first is a leak, growth of the second only
 /// fragmentation or retention.
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
+#[allow(unsafe_code)]
 fn heap_kb() -> Option<(u64, u64)> {
     #[repr(C)]
     struct Mallinfo2 {
