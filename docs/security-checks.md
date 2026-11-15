@@ -16,7 +16,7 @@ Two workflows look at security:
 
 | Job | Tool | Covers | Fails the run |
 |---|---|---|---|
-| Rust dependencies | cargo-deny 0.20.2 (`deny.toml`) | RustSec advisories for every crate in `Cargo.lock` that a feature combination can pull in: vulnerabilities, unsound and unmaintained crates, yanked versions. Licenses (permissive only). Bans: `portmapper` (no port mapping on the user's router, design.md section 9), `openssl-sys` (rustls only), wildcard versions. Sources: crates.io only, no git dependencies. Duplicate versions are listed as warnings. | yes, except duplicate warnings |
+| Rust dependencies | cargo-deny 0.20.2 (`deny.toml`) | RustSec advisories for every crate in `Cargo.lock` that a feature combination can pull in: vulnerabilities, unsound and unmaintained crates, yanked versions. Licenses (permissive only). Bans: `portmapper` (no port mapping on the user's router, design.md section 9), `openssl-sys` (rustls only), wildcard versions. Sources: crates.io, plus the `golemfactory/iroh` fork (iroh 1.5.0, pinned by revision in the workspace `[patch.crates-io]`); no other git sources. Duplicate versions are listed as warnings. | yes, except duplicate warnings |
 | | cargo-audit 0.23.0 | RustSec vulnerabilities in `Cargo.lock`, second implementation. Unmaintained, unsound and yanked show as warnings. | on vulnerabilities |
 | GitHub Actions workflows | zizmor 1.32.0, pedantic persona | Workflow security: template injection, credentials persisted by checkout, excessive permissions, unpinned or impostor action commits, known-vulnerable actions, cache poisoning, secrets outside environments, and more. | yes |
 | | zizmor, auditor persona | The same with low-confidence audits. | no (informational) |
@@ -55,7 +55,6 @@ Current ignores:
 
 | Ignore | Why |
 |---|---|
-| RUSTSEC-2024-0436 (`paste` unmaintained) | Compile-time proc-macro of `netlink-packet-core` 0.8, used by iroh 1.4.1 through `netwatch`; nothing of it runs at run time, and there is no successor release in that line. Remove when iroh moves on. |
 | zizmor `self-repository` on the `uses: ./.github/workflows/security.yml` line of security-scan.yml | zizmor prefers the newer `$/` form, which actionlint 1.7.12 does not know yet. |
 
 ## Running the checks locally

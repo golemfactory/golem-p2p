@@ -13,9 +13,7 @@ all-features = true
 unmaintained = "all"
 unsound = "all"
 yanked = "deny"
-ignore = [
-    { id = "RUSTSEC-2024-0436", reason = "paste (unmaintained, no successor release) is a compile-time proc-macro of netlink-packet-core 0.8, which iroh 1.4.1 uses through netwatch; nothing of it runs at run time. Drop this once iroh moves off netlink-packet-core 0.8." },
-]
+ignore = []
 
 [licenses]
 # Permissive licenses only. Workspace crates are unpublished and unlicensed.
@@ -55,7 +53,9 @@ deny = [
 ]
 
 [sources]
-# crates.io only: no git dependencies, no other registries.
+# crates.io, plus the golemfactory/iroh fork (pinned by revision in the
+# workspace [patch.crates-io]). No other git sources or registries.
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = ["https://github.com/golemfactory/iroh"]

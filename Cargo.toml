@@ -16,8 +16,10 @@ golem-p2p = { path = "crates/golem-p2p" }
 # docs/design.md, section 9. Do not enable it. The endpoint also disables port
 # mapping at runtime, in case another crate of a larger build enables the
 # feature (Cargo unifies features).
-iroh = { version = "=1.4.1", default-features = false, features = ["tls-ring", "metrics"] }
-iroh-relay = { version = "=1.4.1", default-features = false }
+# iroh 1.5.0 is not on crates.io yet: it comes from the golemfactory/iroh fork,
+# see [patch.crates-io] below.
+iroh = { version = "=1.5.0", default-features = false, features = ["tls-ring", "metrics"] }
+iroh-relay = { version = "=1.5.0", default-features = false }
 anyhow = "1"
 axum = { version = "0.8", default-features = false }
 clap = { version = "4", features = ["derive", "env"] }
@@ -35,3 +37,13 @@ tokio-util = "0.7"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
+
+# golemfactory/iroh, branch relay-recovery: upstream main (1.5.0) plus bounded
+# relay actor waits and recovery of stalled relay tasks (RELAY_RECOVERY.md in
+# the fork). All four crates from the same revision so they stay one identity.
+# Back to crates.io once an upstream release contains equivalent fixes.
+[patch.crates-io]
+iroh = { git = "https://github.com/golemfactory/iroh", rev = "4ad24ac2761e97fe57791d8d898fd608b78ca0d5" }
+iroh-base = { git = "https://github.com/golemfactory/iroh", rev = "4ad24ac2761e97fe57791d8d898fd608b78ca0d5" }
+iroh-dns = { git = "https://github.com/golemfactory/iroh", rev = "4ad24ac2761e97fe57791d8d898fd608b78ca0d5" }
+iroh-relay = { git = "https://github.com/golemfactory/iroh", rev = "4ad24ac2761e97fe57791d8d898fd608b78ca0d5" }
