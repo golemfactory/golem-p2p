@@ -124,6 +124,11 @@ pub struct BenchArgs {
     /// fails.
     #[arg(long, requires = "to")]
     compare_relay: bool,
+    /// Key file of the relay-only endpoint of `--compare-relay`, instead of a
+    /// temporary identity. A closed network (`--registry`) needs it: register
+    /// its node ID too. It must differ from `--key`.
+    #[arg(long, requires = "compare_relay")]
+    compare_relay_key: Option<std::path::PathBuf>,
     /// At the end, wait this long without traffic, then check whether the
     /// connection survived and how long the next request takes, e.g. `60s`.
     #[arg(long, requires = "to", value_parser = parse::duration)]
@@ -702,7 +707,7 @@ impl PeerBench<'_> {
     }
 
     /// Latency and throughput over a second, relay-only endpoint with a
-    /// temporary identity that is not published.
+    /// temporary identity (or `--compare-relay-key`) that is not published.
     async fn relay_compare<F: Future<Output = ()>>(&self, stop: &impl Fn() -> F) -> RelayCompare {
         let args = self.args;
         let skipped = |why: &str| RelayCompare {
@@ -714,6 +719,12 @@ impl PeerBench<'_> {
         }
         if args.node.relay_only {
             return skipped("the main connection is relay-only already (--relay-only)");
+        }
+        if args.node.registry.is_some() && args.compare_relay_key.is_none() {
+            return skipped(
+                "closed network: the relay-only endpoint needs its own registered key \
+                 (--compare-relay-key)",
+            );
         }
         self.progress
             .say("Comparing with a relay-only connection (second, temporary endpoint)...");
@@ -807,7 +818,18 @@ impl PeerBench<'_> {
 
     async fn relay_endpoint(&self) -> anyhow::Result<(Endpoint, Arc<BenchDiscovery>)> {
         let signer = InMemorySigner::new();
-        let id = signer.generate();
+        let id = match &self.args.compare_relay_key {
+            Some(path) => {
+                let secret = crate::read_key(path)?;
+                if let Some(main) = &self.args.node.key
+                    && crate::read_key(main)? == secret
+                {
+                    anyhow::bail!("--compare-relay-key must be a different key than --key");
+                }
+                signer.add_secret(&secret)?
+            }
+            None => signer.generate(),
+        };
         let discovery = BenchDiscovery::new(crate::directories(&self.args.node)?, false);
         let ep = crate::builder(
             &self.args.node,

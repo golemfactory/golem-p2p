@@ -647,7 +647,10 @@ brackets):
    identity, relay only (no UDP sockets) and not published to the
    directories, connects to the same peer and repeats latency (at most 5 s),
    upload and download. It needs its own endpoint because golem-p2p keeps one
-   connection per peer, and iroh would add a direct path to it.
+   connection per peer, and iroh would add a direct path to it. On a closed
+   network (`--registry`) the temporary identity would get no certificate, so
+   the phase needs `--compare-relay-key` (a second key, registered too, not
+   the `--key`) and is otherwise skipped (`relay_compare.skipped`).
 7. `idle` (`--idle D`): no traffic for D, then up to 3 requests.
 
 Every phase that runs over a relay (the main connection while it is relayed,

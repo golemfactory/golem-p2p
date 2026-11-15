@@ -225,7 +225,9 @@ smaller requests on links slower than about 8 Mbps, plus the round trip of
 small requests meanwhile); with `--compare-relay` the
 same over a relay-only connection, i.e. what you get if hole punching fails
 (the peer counts as unreachable through the relay only if nothing gets
-through; a failed or very slow relayed transfer is a hint);
+through; a failed or very slow relayed transfer is a hint; on a closed
+network give it a second registered key with `--compare-relay-key`, else it
+is skipped);
 with `--idle 60s` whether the connection survives a minute without traffic.
 QUIC packet loss is reported per phase; only loss while measuring latency
 (when the connection is nearly idle), counted once the path has settled after
