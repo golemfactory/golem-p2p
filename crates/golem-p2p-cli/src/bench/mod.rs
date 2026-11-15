@@ -7,8 +7,8 @@
 //! Each phase is bounded by size and time; transfers over a relay are capped
 //! at `--relay-transfer-size` to spare shared relays.
 
-mod local;
-mod report;
+pub(crate) mod local;
+pub(crate) mod report;
 mod verdict;
 
 use std::{
@@ -301,14 +301,21 @@ pub async fn run(args: BenchArgs, out: &Out) -> anyhow::Result<ExitCode> {
     let bind_start = Instant::now();
     let ep = crate::builder(
         &args.node,
-        signer,
+        signer.clone(),
         ids,
         discovery.clone(),
         Some(args.timeout),
     )?
     .bind()
     .await?;
-    let node = Node::bound(ep, bind_start.elapsed(), &args.node, out, path_log.clone());
+    let node = Node::bound(
+        ep,
+        signer,
+        bind_start.elapsed(),
+        &args.node,
+        out,
+        path_log.clone(),
+    );
     let ep = &node.ep;
     let stop = crate::stop_signal();
 

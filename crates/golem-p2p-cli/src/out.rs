@@ -45,6 +45,11 @@ impl Out {
         self.inner.json
     }
 
+    /// `--node-name`, if given.
+    pub fn node_name(&self) -> Option<String> {
+        self.inner.node.as_str().map(str::to_string)
+    }
+
     /// Starts an event. Without `--json` it is discarded on `emit`.
     pub fn event(&self, name: &str) -> Ev<'_> {
         let buf = self.inner.json.then(|| {

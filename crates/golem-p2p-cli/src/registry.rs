@@ -37,6 +37,11 @@ pub enum RegistryCmd {
         /// Address to listen on.
         #[arg(long, default_value = "127.0.0.1:8090")]
         listen: SocketAddr,
+        /// URL of the network's telemetry collector (`telemetry serve`),
+        /// advertised to nodes in `GET /v1/info`; nodes report there unless
+        /// they opt out.
+        #[arg(long, value_name = "URL")]
+        telemetry_url: Option<url::Url>,
     },
     /// Print a registry's network name, public key and certificate lifetime.
     Info {
@@ -163,7 +168,11 @@ pub async fn run(cmd: RegistryCmd, out: &Out) -> anyhow::Result<()> {
                 );
             }
         }
-        RegistryCmd::Serve { state, listen } => {
+        RegistryCmd::Serve {
+            state,
+            listen,
+            telemetry_url,
+        } => {
             // Fail early on a bad state file.
             let st = RegistryState::load(&state)?;
             let listener = tokio::net::TcpListener::bind(listen).await?;
@@ -181,8 +190,11 @@ pub async fn run(cmd: RegistryCmd, out: &Out) -> anyhow::Result<()> {
                     st.network
                 );
             }
+            let options = golem_p2p::registry::ServeOptions {
+                telemetry_url: telemetry_url.map(|u| u.to_string()),
+            };
             tokio::select! {
-                r = golem_p2p::registry::serve(listener, state) => r?,
+                r = golem_p2p::registry::serve_with(listener, state, options) => r?,
                 _ = crate::shutdown_signal() => {}
             }
         }

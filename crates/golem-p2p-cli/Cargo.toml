@@ -1,6 +1,6 @@
 [package]
 name = "golem-p2p-cli"
-description = "golem-p2p CLI: run a directory, listen, send, probe, bench; test client of the network test harness"
+description = "golem-p2p CLI: run a directory, registry or telemetry collector, listen, send, probe, bench; test client of the network test harness"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,6 +14,10 @@ path = "src/main.rs"
 [dependencies]
 golem-p2p = { workspace = true, features = ["directory-server", "http-directory", "registry-server"] }
 anyhow.workspace = true
+# The telemetry collector's HTTP server, and the reports' HTTP client (both
+# already used by the library).
+axum = { workspace = true, features = ["tokio", "http1"] }
+reqwest = { workspace = true, features = ["rustls-no-provider"] }
 clap.workspace = true
 hex.workspace = true
 # The net report (UDP reachability, public address, NAT mapping, relay

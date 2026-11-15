@@ -72,6 +72,8 @@ pub struct SoakArgs {
     /// Emit a `soak_stats` event this often (and always one at the end).
     #[arg(long, default_value = "30s", value_parser = parse::duration)]
     stats_interval: Duration,
+    #[command(flatten)]
+    telemetry: crate::telemetry::TelemetryArgs,
 }
 
 /// Upper bounds (ms) of the round-trip time histogram buckets in
@@ -140,6 +142,7 @@ impl Window {
         }
         match &r.result {
             Ok(()) => {
+                crate::telemetry::ACTIVITY.request_ok();
                 self.ok += 1;
                 if r.path == PathKind::Direct {
                     self.ok_direct += 1;
@@ -151,6 +154,7 @@ impl Window {
             Err(e) => {
                 self.failed += 1;
                 let kind = echo_error_kind(e);
+                crate::telemetry::ACTIVITY.request_failed(kind);
                 *self.errors.entry(kind).or_default() += 1;
                 out.event("error")
                     .field("kind", kind)
@@ -164,11 +168,13 @@ impl Window {
     fn bulk(&mut self, r: &BulkResult, out: &Out) {
         match &r.result {
             Ok(()) => {
+                crate::telemetry::ACTIVITY.request_ok();
                 self.bulk_ok += 1;
                 self.bulk_bytes += r.bytes;
                 self.bulk_time += r.elapsed;
             }
             Err(e) => {
+                crate::telemetry::ACTIVITY.request_failed("bulk");
                 self.bulk_failed += 1;
                 *self.errors.entry("bulk").or_default() += 1;
                 out.event("error")
@@ -389,6 +395,7 @@ pub async fn run(args: SoakArgs, out: &Out) -> anyhow::Result<ExitCode> {
         .with_context(|| format!("--payload-size must be at most {}", listen::MAX_REQUEST))?;
     let run_start = Instant::now();
     let node = Node::start(&args.node, out, Some(args.timeout), None).await?;
+    let telemetry = node.telemetry(&args.telemetry, &args.node, "soak", out)?;
     let bind_ms = ms(run_start.elapsed());
     let ep = node.ep.clone();
     let to = args.to;
@@ -494,6 +501,9 @@ pub async fn run(args: SoakArgs, out: &Out) -> anyhow::Result<ExitCode> {
             totals.bulk_ok,
             totals.bulk_failed
         );
+    }
+    if let Some(t) = telemetry {
+        t.finish().await;
     }
     ep.close().await;
     Ok(code)
@@ -691,6 +701,7 @@ pub fn endpoint_stats(ep: &Endpoint) -> Value {
         "connections_incoming": s.connections_incoming,
         "connections_closed": s.connections_closed,
         "handshakes_failed": s.handshakes_failed,
+        "connects_failed": s.connects_failed,
         "streams_accepted": s.streams_accepted,
         "streams_refused": s.streams_refused,
         "iroh": {

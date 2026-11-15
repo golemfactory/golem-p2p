@@ -1,0 +1,1064 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:,">
+<title>golem-p2p telemetry</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --surface-2: #f1f0ec; --wash: rgba(11,11,11,.04);
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10);
+  --direct: #2a78d6; --relay: #eb6834; --s3: #1baf7a; --red: #e34948; --violet: #6250d6;
+  --good: #0ca30c; --warn: #fab219; --crit: #d03b3b; --off: #b4b3ac;
+  --shadow: 0 1px 2px rgba(0,0,0,.05), 0 8px 24px rgba(0,0,0,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #242422; --wash: rgba(255,255,255,.05);
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
+    --direct: #3987e5; --relay: #d95926; --s3: #199e70; --red: #e66767; --violet: #9085e9;
+    --off: #5f5e59; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #242422; --wash: rgba(255,255,255,.05);
+  --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
+  --direct: #3987e5; --relay: #d95926; --s3: #199e70; --red: #e66767; --violet: #9085e9;
+  --off: #5f5e59; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--page); color: var(--ink); }
+body { font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; overflow-x: hidden; }
+a { color: var(--direct); }
+button { font: inherit; color: inherit; }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 16px; }
+header { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 14px; }
+h1 { font-size: 18px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
+h2 { font-size: 14px; font-weight: 600; margin: 0; }
+.chip { font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--border); }
+.spacer { flex: 1; }
+.live { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-2); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--off); flex: none; }
+.dot.good { background: var(--good); } .dot.warn { background: var(--warn); } .dot.crit { background: var(--crit); }
+.dot.hollow { background: transparent; box-shadow: inset 0 0 0 2px var(--off); }
+.dot.hollow.good { box-shadow: inset 0 0 0 2px var(--good); }
+.live .dot.good { animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--good) 25%, transparent); } }
+.btn { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+.btn:hover { background: var(--surface-2); }
+.btn[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.banner { display: none; margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; font-size: 13px;
+  background: color-mix(in srgb, var(--crit) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--crit) 35%, transparent); }
+.banner.on { display: block; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.tile { padding: 12px 14px; min-width: 0; }
+.tile .lbl { font-size: 12px; color: var(--ink-2); }
+.tile .val { font-size: 26px; font-weight: 600; line-height: 1.2; margin-top: 2px; white-space: nowrap; }
+.tile .val small { font-size: 15px; font-weight: 500; color: var(--ink-2); }
+.tile .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.tile .pair { display: flex; gap: 14px; flex-wrap: wrap; }
+.tile .pair .val { font-size: 20px; }
+.seg { display: flex; gap: 2px; height: 8px; margin-top: 8px; }
+.seg span { border-radius: 4px; min-width: 0; }
+.key { display: inline-flex; align-items: center; gap: 5px; margin-right: 10px; white-space: nowrap; }
+.key i { display: inline-block; width: 14px; height: 0; border-top: 2px solid; }
+.key i.dash { border-top-style: dashed; }
+.key i.sq { width: 8px; height: 8px; border: 0; border-radius: 2px; }
+.mapcard { position: relative; margin-bottom: 14px; overflow: hidden; }
+.cardhead { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.legend { display: flex; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--ink-2); gap: 4px 0; }
+.legend svg { vertical-align: middle; }
+#map { display: block; width: 100%; height: clamp(380px, 62vh, 640px); touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+#map .n { cursor: pointer; }
+#map .n .hit { fill: transparent; touch-action: none; }
+#map text { font-size: 12px; fill: var(--ink); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
+#map text.sub { font-size: 10.5px; fill: var(--muted); }
+#map text.ll { font-size: 11px; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+#map text.ll.hl { font-weight: 650; fill: var(--ink); }
+#map .lk { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+#map .lk.direct { stroke: var(--direct); }
+#map .lk.relay { stroke: var(--relay); stroke-dasharray: 7 5; }
+#map .lk.unknown { stroke: var(--muted); stroke-dasharray: 2 5; }
+#map .lhit { fill: none; stroke: transparent; stroke-width: 16px; cursor: pointer; stroke-linecap: round; }
+#map .glow { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+#map .sel { fill: none; stroke: var(--ink); stroke-opacity: .16; stroke-linecap: round; stroke-linejoin: round; }
+#map .home { stroke: var(--muted); stroke-width: 1px; stroke-dasharray: 1 4; stroke-linecap: round; opacity: .8; }
+#map .flow { stroke: var(--surface); stroke-width: 1.2px; }
+#map .flow.direct { fill: var(--direct); } #map .flow.relay { fill: var(--relay); } #map .flow.unknown { fill: var(--muted); }
+#map .nc { stroke: var(--surface); stroke-width: 2px; transition: fill .4s, r .4s; }
+#map .nc.online { fill: var(--good); } #map .nc.stale { fill: var(--warn); } #map .nc.offline { fill: var(--off); }
+#map .nc.peer { fill: var(--surface); stroke-width: 2.5px; } #map .nc.peer.online { stroke: var(--good); } #map .nc.peer.offline, #map .nc.peer.stale { stroke: var(--off); }
+#map .ring { fill: none; stroke: var(--ink); stroke-width: 2px; opacity: 0; transition: opacity .2s; }
+#map .n.selected .ring { opacity: .9; }
+#map .rshape { fill: var(--surface-2); stroke: var(--ink-2); stroke-width: 1.6px; }
+#map .n.selected .rshape { stroke: var(--ink); stroke-width: 2.4px; }
+#map .rglyph { fill: none; stroke: var(--ink-2); stroke-width: 1.4px; stroke-linecap: round; pointer-events: none; }
+#map .empty { font-size: 14px; fill: var(--muted); stroke: none; text-anchor: middle; }
+.mapfoot { position: absolute; right: 10px; bottom: 8px; font-size: 11px; color: var(--muted); pointer-events: none; }
+.rangebar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 18px 0 10px; }
+.rangebar h2 { margin-right: 8px; }
+.charts { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 14px; }
+@media (min-width: 780px) { .charts { grid-template-columns: 1fr 1fr; } }
+.chartcard { padding: 12px 14px 8px; min-width: 0; }
+.chartcard .legend { margin: 4px 0 2px; min-height: 18px; }
+.chart { position: relative; transition: opacity .2s; }
+.chart.loading { opacity: .5; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.chart .ax { font-size: 10.5px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.chart .gl { stroke: var(--grid); stroke-width: 1px; shape-rendering: crispEdges; }
+.chart .base { stroke: var(--axis); stroke-width: 1px; shape-rendering: crispEdges; }
+.chart .ln { fill: none; stroke-width: 2px; stroke-linejoin: round; stroke-linecap: round; }
+.chart .xh { stroke: var(--axis); stroke-width: 1px; }
+.chart .nodata { font-size: 12px; fill: var(--muted); text-anchor: middle; }
+.tablecard { margin-bottom: 14px; }
+.tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 900px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; vertical-align: middle; }
+th { font-size: 12px; font-weight: 600; color: var(--ink-2); cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--surface); }
+th[aria-sort="ascending"]::after { content: " ▲"; font-size: 9px; } th[aria-sort="descending"]::after { content: " ▼"; font-size: 9px; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr { cursor: pointer; } tbody tr:hover, tbody tr:focus { background: var(--wash); outline: none; }
+tbody tr.dim td { color: var(--muted); }
+.nm { display: flex; align-items: center; gap: 8px; } .nm b { font-weight: 600; } .id { color: var(--muted); font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.err { color: var(--crit); }
+footer { font-size: 12px; color: var(--muted); padding: 6px 0 24px; display: flex; gap: 6px 16px; flex-wrap: wrap; }
+#tip { position: fixed; z-index: 30; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow);
+  padding: 7px 10px; font-size: 12px; max-width: 280px; display: none; }
+#tip .t { color: var(--ink-2); margin-bottom: 3px; } #tip .r { display: flex; align-items: center; gap: 7px; } #tip .r b { font-variant-numeric: tabular-nums; } #tip .r span { color: var(--ink-2); }
+#tip .r i { width: 12px; border-top: 2px solid; } #tip .r i.dash { border-top-style: dashed; }
+#panel { position: fixed; z-index: 20; top: 0; right: 0; bottom: 0; width: min(420px, 100%); background: var(--surface); border-left: 1px solid var(--border);
+  box-shadow: var(--shadow); transform: translateX(105%); visibility: hidden; transition: transform .25s ease, visibility 0s linear .25s;
+  overflow-y: auto; overscroll-behavior: contain; padding: 14px 16px 24px; }
+#panel.open { transform: none; visibility: visible; transition: transform .25s ease; }
+@media (max-width: 700px) {
+  #panel { top: auto; left: 0; width: 100%; height: 74vh; border-left: 0; border-top: 1px solid var(--border); border-radius: 14px 14px 0 0; transform: translateY(105%); }
+  #map { height: 460px; }
+  .mapfoot { display: none; }
+  .wrap { padding: 12px; }
+}
+.ph { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+.ph h3 { margin: 0; font-size: 17px; font-weight: 650; word-break: break-word; }
+.ph .x { margin-left: auto; flex: none; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); margin: 0 6px 6px 0; }
+dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 5px 14px; margin: 10px 0 14px; font-size: 13px; }
+dl.kv dt { color: var(--ink-2); } dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.psec { font-size: 12px; font-weight: 600; color: var(--ink-2); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .04em; }
+.plink { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 13px; }
+.plink:hover { background: var(--wash); }
+.plink .rt { margin-left: auto; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.linkish { color: var(--direct); cursor: pointer; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; background: none; border: 0; padding: 0; }
+.timeline { display: flex; height: 14px; border-radius: 4px; overflow: hidden; gap: 0; background: var(--surface-2); }
+.timeline span { height: 100%; }
+.tlaxis { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+.tot { width: 100%; min-width: 0; font-size: 12.5px; } .tot td { padding: 4px 0; border: 0; } .tot td.num { padding-left: 10px; }
+.copy { font-size: 11px; padding: 1px 7px; margin-left: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>golem-p2p telemetry</h1>
+    <span class="chip" id="net" title="network">–</span>
+    <span class="spacer"></span>
+    <span class="live" id="live"><span class="dot"></span><span id="livetxt">connecting…</span></span>
+    <button class="btn" id="theme" type="button" title="Toggle light / dark">◐ Theme</button>
+  </header>
+  <div class="banner" id="banner" role="status"></div>
+  <section class="tiles" id="tiles" aria-label="Summary"></section>
+  <section class="card mapcard" aria-label="Network map">
+    <div class="cardhead">
+      <h2>Live network</h2>
+      <div class="legend" id="maplegend"></div>
+      <span class="spacer"></span>
+      <button class="btn" id="relayout" type="button" title="Forget dragged and saved positions">Reset layout</button>
+    </div>
+    <svg id="map" role="img" aria-label="Map of nodes, relays and live connections"></svg>
+    <div class="mapfoot">drag nodes · click for details</div>
+  </section>
+  <div class="rangebar" role="group" aria-label="Time range">
+    <h2>History</h2>
+    <button class="btn" data-range="900" type="button">15m</button>
+    <button class="btn" data-range="3600" type="button">1h</button>
+    <button class="btn" data-range="21600" type="button">6h</button>
+    <button class="btn" data-range="86400" type="button">24h</button>
+    <button class="btn" data-range="604800" type="button">7d</button>
+    <span class="spacer"></span>
+    <span class="live" id="histinfo"></span>
+  </div>
+  <section class="charts">
+    <div class="card chartcard"><h2>Nodes online</h2><div class="legend"></div><div class="chart" id="c-nodes"></div></div>
+    <div class="card chartcard"><h2>Links by path</h2><div class="legend"></div><div class="chart" id="c-links"></div></div>
+    <div class="card chartcard"><h2>Traffic</h2><div class="legend"></div><div class="chart" id="c-traffic"></div></div>
+    <div class="card chartcard"><h2>Failures and path changes</h2><div class="legend"></div><div class="chart" id="c-fail"></div></div>
+  </section>
+  <section class="card tablecard" aria-label="Nodes">
+    <div class="cardhead"><h2>Nodes</h2><span class="legend" id="tablenote"></span></div>
+    <div class="tablewrap"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody></table></div>
+  </section>
+  <footer>
+    <span>Nodes report every 5 s; opt out with <code>--no-telemetry</code>; see docs/telemetry.md</span>
+    <span class="spacer"></span>
+    <a href="v1/state">v1/state</a><a href="v1/nodes">v1/nodes</a><a href="metrics">metrics</a>
+  </footer>
+</div>
+<aside id="panel" aria-label="Details" aria-hidden="true"></aside>
+<div id="tip" role="tooltip"></div>
+<noscript><p style="padding:16px">This dashboard needs JavaScript. The data is at <a href="v1/state">v1/state</a> and <a href="metrics">metrics</a>.</p></noscript>
+<script>
+(() => {
+'use strict';
+const NS = 'http://www.w3.org/2000/svg';
+const $ = (s) => document.querySelector(s);
+const kids = (el, list) => { for (const k of list) if (k != null && k !== false) el.append(k instanceof Node ? k : String(k)); return el; };
+function h(tag, attrs, ...c) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v; else if (k === 'style') el.style.cssText = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v); else el.setAttribute(k, v);
+  }
+  return kids(el, c);
+}
+function s(tag, attrs, ...c) {
+  const el = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) if (v != null) el.setAttribute(k, v);
+  return kids(el, c);
+}
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
+  del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } },
+};
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+// ---------- formatting ----------
+const num = (v) => typeof v === 'number' && isFinite(v);
+function fmtNum(v, d = 1) {
+  if (!num(v)) return '–';
+  const a = Math.abs(v);
+  if (a >= 1e9) return (v / 1e9).toFixed(1) + 'G';
+  if (a >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+  if (a >= 1e4) return (v / 1e3).toFixed(0) + 'K';
+  if (a >= 1000) return Math.round(v).toLocaleString('en-US');
+  return String(+v.toFixed(a < 10 ? d : 0));
+}
+function fmtBytes(b) {
+  if (!num(b)) return '–';
+  const u = ['B', 'kB', 'MB', 'GB', 'TB']; let i = 0, v = b;
+  while (Math.abs(v) >= 1000 && i < u.length - 1) { v /= 1000; i++; }
+  return (i === 0 ? Math.round(v) : v.toFixed(v < 10 ? 1 : 0)) + ' ' + u[i];
+}
+const fmtRate = (b) => (num(b) ? fmtBytes(b) + '/s' : '–');
+const fmtMs = (v) => (num(v) ? (v === 0 ? '0' : v < 10 ? v.toFixed(1) : Math.round(v)) + ' ms' : '–');
+function fmtDur(sec) {
+  if (!num(sec)) return '–';
+  sec = Math.max(0, Math.round(sec));
+  if (sec < 60) return sec + ' s';
+  if (sec < 3600) return Math.floor(sec / 60) + ' min' + (sec < 600 && sec % 60 ? ' ' + (sec % 60) + ' s' : '');
+  if (sec < 86400) return Math.floor(sec / 3600) + ' h ' + Math.floor((sec % 3600) / 60) + ' min';
+  return Math.floor(sec / 86400) + ' d ' + Math.floor((sec % 86400) / 3600) + ' h';
+}
+const serverNow = () => Date.now() + st.offset;
+const ago = (ms) => (num(ms) ? fmtDur((serverNow() - ms) / 1000) + ' ago' : 'never');
+const shortId = (id) => (typeof id === 'string' && id.length > 12 ? id.slice(0, 6) + '…' + id.slice(-4) : String(id || '?'));
+const trunc = (t, n) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
+const nodeLabel = (n) => (n && typeof n.name === 'string' && n.name.trim() ? n.name.trim() : shortId(n && n.id));
+const normUrl = (u) => String(u || '').replace(/\/+$/, '');
+function relayHost(u) { try { const x = new URL(u); return x.hostname + (x.port ? ':' + x.port : ''); } catch (e) { return String(u || ''); } }
+const linkKey = (a, b) => (a < b ? a + ',' + b : b + ',' + a);
+const pad2 = (n) => String(n).padStart(2, '0');
+function clock(ms) { const d = new Date(ms); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+function clockS(ms) { const d = new Date(ms); return clock(ms) + ':' + pad2(d.getSeconds()); }
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const STATUS_RANK = { online: 0, stale: 1, offline: 2 };
+const statusClass = (s) => (s === 'online' ? 'good' : s === 'stale' ? 'warn' : '');
+function statusDot(n) {
+  const c = 'dot ' + statusClass(n && n.status) + (n && n.reporting === false ? ' hollow' : '');
+  return h('span', { class: c, title: n && n.status || 'unknown' });
+}
+
+// ---------- state ----------
+const st = {
+  state: null, offset: 0, lastOk: 0, range: 3600, hist: null, histOk: 0,
+  sel: null, panelHist: null, panelKey: '', sort: { key: 'status', dir: 1 },
+};
+const nodeById = (id) => (st.state && st.state.nodes || []).find((n) => n.id === id);
+const nodeName = (id) => nodeLabel(nodeById(id) || { id });
+
+// ---------- theme ----------
+function applyTheme() {
+  const q = new URLSearchParams(location.search).get('theme');
+  const t = q === 'dark' || q === 'light' ? q : store.get('gp2p-theme');
+  if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+}
+function effectiveTheme() {
+  return document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+}
+applyTheme();
+$('#theme').addEventListener('click', () => {
+  const t = effectiveTheme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t; store.set('gp2p-theme', t);
+});
+
+// ---------- tooltip ----------
+const tip = $('#tip');
+function showTip(ev, title, rows) {
+  tip.replaceChildren();
+  if (title) tip.append(h('div', { class: 't' }, title));
+  for (const r of rows) {
+    if (typeof r === 'string') tip.append(h('div', null, r));
+    else tip.append(h('div', { class: 'r' }, r.color ? h('i', { class: r.dash ? 'dash' : '', style: 'border-color:' + r.color }) : null, h('b', null, r.value), h('span', null, r.label)));
+  }
+  tip.style.display = 'block';
+  const pad = 14, w = tip.offsetWidth, hh = tip.offsetHeight;
+  let x = ev.clientX + pad, y = ev.clientY + pad;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - pad;
+  if (y + hh > innerHeight - 8) y = ev.clientY - hh - pad;
+  tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+}
+const hideTip = () => { tip.style.display = 'none'; };
+
+// ---------- fetching ----------
+async function getJSON(url) {
+  const r = await fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+const errors = {};
+function setError(k, msg) {
+  if (msg) errors[k] = msg; else delete errors[k];
+  const b = $('#banner'); const m = Object.values(errors);
+  b.textContent = m.join(' · '); b.classList.toggle('on', m.length > 0);
+}
+async function pollState() {
+  try {
+    const S = await getJSON('v1/state');
+    if (!S || !Array.isArray(S.nodes)) throw new Error('unexpected answer');
+    st.state = S; st.offset = num(S.now) ? S.now - Date.now() : 0; st.lastOk = Date.now();
+    setError('state', null);
+    renderAll();
+  } catch (e) {
+    console.error(e);
+    setError('state', 'Live data unavailable (' + e.message + '); showing the last data.');
+  } finally { setTimeout(pollState, 5000); }
+}
+let histTimer = 0;
+async function pollHistory() {
+  clearTimeout(histTimer);
+  const r = st.range;
+  try {
+    const H = await getJSON('v1/history?range=' + r);
+    if (r !== st.range) return;
+    st.hist = H; st.histOk = Date.now(); setError('hist', null);
+    renderCharts();
+  } catch (e) {
+    setError('hist', 'History unavailable (' + e.message + ').');
+  } finally {
+    document.querySelectorAll('.charts .chart').forEach((c) => c.classList.remove('loading'));
+    if (r === st.range) histTimer = setTimeout(pollHistory, r <= 3600 ? 5000 : 60000);
+  }
+}
+let panelTimer = 0;
+async function pollPanel() {
+  clearTimeout(panelTimer);
+  const sel = st.sel; if (!sel || sel.type === 'relay') return;
+  const key = sel.type + ':' + (sel.id || sel.a + ',' + sel.b);
+  const q = sel.type === 'node' ? '&node=' + encodeURIComponent(sel.id) : '&link=' + encodeURIComponent(sel.a) + ',' + encodeURIComponent(sel.b);
+  try {
+    const H = await getJSON('v1/history?range=3600' + q);
+    if (st.panelKey !== key) return;
+    st.panelHist = H; renderPanel();
+  } catch (e) { /* the panel keeps its last charts */ }
+  finally { if (st.panelKey === key) panelTimer = setTimeout(pollPanel, 10000); }
+}
+setInterval(() => {
+  const age = st.lastOk ? (Date.now() - st.lastOk) / 1000 : Infinity;
+  const d = $('#live .dot');
+  d.className = 'dot ' + (age < 15 ? 'good' : age < 60 ? 'warn' : 'crit');
+  $('#livetxt').textContent = st.lastOk ? (age < 15 ? 'Live' : 'Stale') + ' · updated ' + clockS(st.lastOk) : 'connecting…';
+}, 1000);
+
+// ---------- summary tiles ----------
+function tile(lbl, val, sub) { return h('div', { class: 'card tile' }, h('div', { class: 'lbl' }, lbl), val, sub); }
+function renderTiles() {
+  const S = st.state, sm = S.summary || {}, nodes = S.nodes || [];
+  const rep = nodes.filter((n) => n.reporting !== false);
+  const stale = rep.filter((n) => n.status === 'stale').length, off = rep.filter((n) => n.status === 'offline').length;
+  const d = sm.links_direct || 0, r = sm.links_relay || 0;
+  const seg = h('div', { class: 'seg', role: 'img', 'aria-label': d + ' direct, ' + r + ' relayed' });
+  if (d + r > 0) {
+    if (d) seg.append(h('span', { style: 'flex:' + d + ';background:var(--direct)' }));
+    if (r) seg.append(h('span', { style: 'flex:' + r + ';background:var(--relay)' }));
+  } else seg.append(h('span', { style: 'flex:1;background:var(--surface-2)' }));
+  const fails = (sm.conns_failed_1h || 0) + (sm.requests_failed_1h || 0);
+  $('#tiles').replaceChildren(
+    tile('Nodes online', h('div', { class: 'val' }, fmtNum(sm.nodes_online), h('small', null, ' / ' + fmtNum(sm.nodes_known))),
+      h('div', { class: 'sub' }, stale + ' stale · ' + off + ' offline')),
+    tile('Live links', h('div', { class: 'val' }, fmtNum(d + r)),
+      h('div', null, seg, h('div', { class: 'sub' }, h('span', { class: 'key' }, h('i', { style: 'border-color:var(--direct)' }), d + ' direct'),
+        h('span', { class: 'key' }, h('i', { class: 'dash', style: 'border-color:var(--relay)' }), r + ' relayed')))),
+    tile('Traffic now', h('div', { class: 'pair' },
+      h('div', null, h('div', { class: 'val' }, fmtRate(sm.rate_in)), h('div', { class: 'sub' }, 'in')),
+      h('div', null, h('div', { class: 'val' }, fmtRate(sm.rate_out)), h('div', { class: 'sub' }, 'out')))),
+    tile('Failures, last hour', h('div', { class: 'val' }, fmtNum(fails)),
+      h('div', { class: 'sub' }, fmtNum(sm.conns_failed_1h || 0) + ' connections · ' + fmtNum(sm.requests_failed_1h || 0) + ' of ' + fmtNum(sm.requests_1h || 0) + ' requests')),
+    tile('Path changes, last hour', h('div', { class: 'val' }, fmtNum(sm.path_changes_1h || 0)),
+      h('div', { class: 'sub' }, 'direct ⇄ relay switches')),
+  );
+  $('#net').textContent = S.network || 'network';
+}
+
+// ---------- network map ----------
+const Net = (() => {
+  const svg = $('#map');
+  const gHome = s('g'), gSel = s('g'), gGlow = s('g'), gLinks = s('g'), gFlow = s('g'), gLbl = s('g'), gNodes = s('g');
+  const empty = s('text', { class: 'empty' });
+  svg.append(gHome, gSel, gGlow, gLinks, gFlow, gLbl, gNodes, empty);
+  let W = 800, H = 480, alpha = 1, dragging = null, first = true, lastT = 0;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  const ents = new Map(), links = new Map(), homes = new Map();
+  let saved = store.get('gp2p-pos') || {};
+  const FADE = 700, HL = 5000;
+  function fnv(str) { let x = 2166136261; for (let i = 0; i < str.length; i++) { x ^= str.charCodeAt(i); x = Math.imul(x, 16777619); } return x >>> 0; }
+
+  function resize() {
+    const r = svg.getBoundingClientRect();
+    const w = Math.max(280, Math.round(r.width)), hh = Math.max(260, Math.round(r.height));
+    if (w === W && hh === H) return;
+    for (const e of ents.values()) { e.x *= w / W; e.y *= hh / H; }
+    W = w; H = hh; svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    empty.setAttribute('x', W / 2); empty.setAttribute('y', H / 2);
+    alpha = Math.max(alpha, 0.2);
+  }
+  new ResizeObserver(resize).observe(svg);
+
+  function ensure(key, kind) {
+    let e = ents.get(key);
+    if (e) return e;
+    const sv = saved[key]; const hs = fnv(key);
+    const ang = (hs % 3600) / 3600 * Math.PI * 2, rad = 0.16 + ((hs >>> 12) % 1000) / 1000 * 0.2;
+    e = { key, kind, vx: 0, vy: 0, pinned: !!(sv && sv[2]), born: performance.now(), gone: 0, data: null,
+      x: sv ? sv[0] * W : W / 2 + Math.cos(ang) * rad * W, y: sv ? sv[1] * H : H / 2 + Math.sin(ang) * rad * H, isNew: !sv };
+    if (first) e.born -= FADE;
+    const g = s('g', { class: 'n', tabindex: '0' });
+    g.append(s('circle', { class: 'hit', r: 22 }));
+    if (kind === 'node') {
+      e.ring = s('circle', { class: 'ring', r: 16 });
+      e.circle = s('circle', { class: 'nc', r: 10 });
+      e.label = s('text', { 'text-anchor': 'middle', y: 27 });
+      g.append(e.ring, e.circle, e.label);
+    } else {
+      const hex = []; for (let i = 0; i < 6; i++) { const a = Math.PI / 6 + i * Math.PI / 3; hex.push((Math.cos(a) * 15).toFixed(1) + ',' + (Math.sin(a) * 15).toFixed(1)); }
+      e.shape = s('polygon', { class: 'rshape', points: hex.join(' ') });
+      const glyph = s('path', { class: 'rglyph', d: 'M-6,-2 L0,-6 L6,-2 M-6,2 L0,6 L6,2' });
+      e.label = s('text', { class: 'sub', 'text-anchor': 'middle', y: 30 });
+      g.append(e.shape, glyph, e.label);
+    }
+    g.addEventListener('pointerdown', (ev) => startDrag(ev, e));
+    g.addEventListener('pointerenter', (ev) => entTip(ev, e));
+    g.addEventListener('pointermove', (ev) => { if (!dragging) entTip(ev, e); });
+    g.addEventListener('pointerleave', hideTip);
+    g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectEnt(e); } });
+    e.g = g; gNodes.append(g); ents.set(key, e);
+    alpha = Math.max(alpha, 0.6);
+    return e;
+  }
+  function selectEnt(e) {
+    if (e.kind === 'node') select({ type: 'node', id: e.data.id });
+    else select({ type: 'relay', url: e.data.url });
+  }
+  function entTip(ev, e) {
+    if (e.kind === 'relay') {
+      const homed = (e.data.nodes || []).length;
+      showTip(ev, 'Relay server', [e.data.url, homed + ' node' + (homed === 1 ? '' : 's') + ' homed here']);
+      return;
+    }
+    const n = e.data, rows = [];
+    rows.push(n.reporting === false ? 'not reporting (seen as a peer)' : (n.status || '?') + (n.last_seen ? ' · seen ' + ago(n.last_seen) : ''));
+    if (n.reporting !== false) rows.push((n.conns_direct || 0) + ' direct · ' + (n.conns_relay || 0) + ' relayed', fmtRate(n.rate_in) + ' in · ' + fmtRate(n.rate_out) + ' out');
+    showTip(ev, nodeLabel(n), rows);
+  }
+  function linkTip(ev, L) {
+    const l = L.data, rows = [];
+    rows.push((l.path === 'relay' ? 'Relayed' + (l.relay ? ' via ' + relayHost(l.relay) : '') : l.path === 'direct' ? 'Direct' : 'Path unknown') + ' · RTT ' + fmtMs(l.rtt_ms));
+    rows.push(fmtRate(l.rate) + (num(l.path_since) ? ' · on this path ' + fmtDur((serverNow() - l.path_since) / 1000) : ''));
+    const by = l.reported_by || [];
+    rows.push(by.length >= 2 ? 'reported by both ends' : by.length === 1 ? 'reported by ' + nodeName(by[0]) + ' only' : '');
+    showTip(ev, nodeName(l.a) + ' ⇄ ' + nodeName(l.b), rows.filter(Boolean));
+  }
+
+  function update(S) {
+    const now = performance.now();
+    const seen = new Set();
+    const byId = new Map();
+    for (const n of S.nodes || []) if (n && typeof n.id === 'string') byId.set(n.id, n);
+    for (const l of S.links || []) for (const id of [l.a, l.b]) if (typeof id === 'string' && !byId.has(id)) byId.set(id, { id, reporting: false, status: 'online' });
+    for (const n of byId.values()) { const e = ensure('n:' + n.id, 'node'); e.data = n; seen.add(e.key); }
+    const relays = new Map();
+    const addRelay = (u) => { const k = normUrl(u); if (k && !relays.has(k)) relays.set(k, { url: u, nodes: [] }); return relays.get(k); };
+    for (const r of S.relays || []) if (r && r.url) addRelay(r.url).nodes = Array.isArray(r.nodes) ? r.nodes : [];
+    for (const n of byId.values()) if (n.home_relay) { const r = addRelay(n.home_relay); if (!r.nodes.includes(n.id)) r.nodes.push(n.id); }
+    for (const l of S.links || []) if (l.path === 'relay' && l.relay) addRelay(l.relay);
+    for (const [k, r] of relays) { const e = ensure('r:' + k, 'relay'); e.data = r; seen.add(e.key); }
+    for (const e of ents.values()) { if (seen.has(e.key)) e.gone = 0; else if (!e.gone) e.gone = now; }
+    // home relay lines
+    const hseen = new Set();
+    for (const n of byId.values()) {
+      if (!n.home_relay || n.status === 'offline') continue;
+      const k = 'n:' + n.id + '>r:' + normUrl(n.home_relay); hseen.add(k);
+      let L = homes.get(k);
+      if (!L) { L = { key: k, a: 'n:' + n.id, b: 'r:' + normUrl(n.home_relay), born: first ? now - FADE : now, gone: 0, el: s('line', { class: 'home' }) }; gHome.append(L.el); homes.set(k, L); }
+      L.gone = 0;
+      L.el.style.strokeDasharray = n.home_relay_connected === false ? '4 4' : '';
+    }
+    for (const L of homes.values()) if (!hseen.has(L.key) && !L.gone) L.gone = now;
+    // links
+    const lseen = new Set();
+    for (const l of S.links || []) {
+      if (typeof l.a !== 'string' || typeof l.b !== 'string') continue;
+      const key = linkKey(l.a, l.b); lseen.add(key);
+      let L = links.get(key);
+      if (!L) {
+        L = { key, born: first ? now - FADE : now, gone: 0, hl: 0, hlText: '', dots: [], phase: (fnv(key) % 1000) / 1000 };
+        L.glow = s('path', { class: 'glow' }); L.selp = s('path', { class: 'sel' });
+        L.line = s('path', { class: 'lk' }); L.hit = s('path', { class: 'lhit' });
+        L.lbl = s('text', { class: 'll', 'text-anchor': 'middle' });
+        L.hit.addEventListener('click', () => select({ type: 'link', a: L.data.a, b: L.data.b }));
+        L.hit.addEventListener('pointerenter', (ev) => linkTip(ev, L));
+        L.hit.addEventListener('pointermove', (ev) => linkTip(ev, L));
+        L.hit.addEventListener('pointerleave', hideTip);
+        gGlow.append(L.glow); gSel.append(L.selp); gLinks.append(L.line, L.hit); gLbl.append(L.lbl);
+        links.set(key, L); alpha = Math.max(alpha, 0.4);
+      } else if (L.data && !L.gone && L.data.path !== l.path && l.path !== 'unknown' && L.data.path) {
+        L.hl = now; L.hlText = L.data.path + ' → ' + l.path;
+      }
+      L.data = l; L.gone = 0;
+      const rate = num(l.rate) ? l.rate : 0;
+      L.width = Math.min(7, 1.6 + Math.log10(1 + rate / 100) * 1.25);
+      L.speed = Math.min(170, 22 + Math.log10(1 + rate / 50) * 30);
+      L.ndots = reduceMotion.matches ? 0 : Math.max(1, Math.min(6, 1 + Math.floor(Math.log10(1 + rate / 20))));
+      L.line.setAttribute('class', 'lk ' + (l.path === 'direct' || l.path === 'relay' ? l.path : 'unknown'));
+      L.line.style.strokeWidth = L.width + 'px';
+    }
+    for (const L of links.values()) if (!lseen.has(L.key) && !L.gone) L.gone = now;
+    restyle();
+    empty.textContent = byId.size ? '' : 'No reports yet. Members of the network report every 5 s.';
+    if (first) {
+      first = false;
+      if ([...ents.values()].some((e) => e.isNew)) for (let i = 0; i < 400; i++) tick(Math.max(0.02, 1 - i / 400));
+      alpha = 0.05;
+    }
+    for (const e of ents.values()) e.isNew = false;
+  }
+
+  function restyle() {
+    for (const e of ents.values()) {
+      const sel = st.sel && ((e.kind === 'node' && st.sel.type === 'node' && st.sel.id === e.data.id) || (e.kind === 'relay' && st.sel.type === 'relay' && normUrl(st.sel.url) === normUrl(e.data.url)));
+      e.g.classList.toggle('selected', !!sel);
+      if (e.kind === 'node') {
+        const n = e.data, conns = (n.conns_direct || 0) + (n.conns_relay || 0);
+        const r = 9 + Math.min(5, conns);
+        e.circle.setAttribute('r', r); e.ring.setAttribute('r', r + 5); e.label.setAttribute('y', r + 16);
+        e.circle.setAttribute('class', 'nc ' + (n.status || 'offline') + (n.reporting === false ? ' peer' : ''));
+        setLabel(e, trunc(nodeLabel(n), 22));
+        e.g.setAttribute('aria-label', 'node ' + nodeLabel(n) + ', ' + (n.status || ''));
+        e.dim = n.status === 'offline' ? 0.55 : 1;
+      } else {
+        setLabel(e, trunc(relayHost(e.data.url), 30));
+        e.g.setAttribute('aria-label', 'relay ' + e.data.url);
+        e.dim = 1;
+      }
+    }
+    for (const L of links.values()) {
+      const sel = st.sel && st.sel.type === 'link' && linkKey(st.sel.a, st.sel.b) === L.key;
+      L.selp.style.strokeWidth = sel ? (L.width || 2) + 12 + 'px' : '0px';
+    }
+  }
+
+  function setLabel(e, t) {
+    if (e.label.textContent === t && e.lw) return;
+    e.label.textContent = t;
+    try { e.lw = e.label.getComputedTextLength(); } catch (err) { e.lw = t.length * 6.5; }
+  }
+
+  function edges() {
+    const out = [], sc = Math.min(1.15, Math.max(0.5, Math.sqrt(W * H) / 760));
+    const live = (k) => { const e = ents.get(k); return e && !e.gone ? e : null; };
+    for (const L of homes.values()) { if (L.gone) continue; const a = live(L.a), b = live(L.b); if (a && b) out.push([a, b, 120 * sc, 0.12]); }
+    for (const L of links.values()) {
+      if (L.gone) continue; const l = L.data;
+      const a = live('n:' + l.a), b = live('n:' + l.b); if (!a || !b) continue;
+      const r = l.path === 'relay' && l.relay ? live('r:' + normUrl(l.relay)) : null;
+      if (r) { out.push([a, r, 130 * sc, 0.25]); out.push([r, b, 130 * sc, 0.25]); } else out.push([a, b, 170 * sc, 0.3]);
+    }
+    return out;
+  }
+  function tick(al) {
+    const arr = [...ents.values()].filter((e) => !e.gone);
+    const cx = W / 2, cy = H / 2;
+    const rep = 1400 * Math.min(1.6, Math.max(0.6, Math.sqrt(W * H) / 700));
+    for (let i = 0; i < arr.length; i++) for (let j = i + 1; j < arr.length; j++) {
+      const a = arr[i], b = arr[j];
+      let dx = b.x - a.x, dy = b.y - a.y;
+      if (dx === 0 && dy === 0) { dx = (fnv(a.key) % 7) - 3 || 1; dy = (fnv(b.key) % 7) - 3 || 1; }
+      const d2 = Math.max(dx * dx + dy * dy, 400), k = rep * al / d2;
+      a.vx -= dx * k; a.vy -= dy * k; b.vx += dx * k; b.vy += dy * k;
+    }
+    for (const [a, b, len, str] of edges()) {
+      const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const f = (d - len) / d * al * str * 0.5;
+      a.vx += dx * f; a.vy += dy * f; b.vx -= dx * f; b.vy -= dy * f;
+    }
+    for (const e of arr) {
+      e.vx += (cx - e.x) * 0.012 * al; e.vy += (cy - e.y) * 0.03 * al;
+      if (e.pinned || e === dragging) { e.vx = e.vy = 0; continue; }
+      e.vx *= 0.6; e.vy *= 0.6;
+      e.x = Math.min(W - 40, Math.max(40, e.x + e.vx));
+      e.y = Math.min(H - 46, Math.max(28, e.y + e.vy));
+    }
+  }
+
+  function at(pts, f) { // point at fraction f along a polyline
+    let tot = 0; const seg = [];
+    for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); seg.push(l); tot += l; }
+    let d = f * tot;
+    for (let i = 0; i < seg.length; i++) {
+      if (d <= seg[i] || i === seg.length - 1) { const t = seg[i] ? Math.min(1, d / seg[i]) : 0; return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t, tot]; }
+      d -= seg[i];
+    }
+    return [pts[0][0], pts[0][1], tot];
+  }
+  const fade = (o, now) => (o.gone ? Math.max(0, 1 - (now - o.gone) / FADE) : Math.min(1, (now - o.born) / FADE));
+
+  function frame(t) {
+    const now = performance.now();
+    if (alpha > 0.004) {
+      if (reduceMotion.matches) { for (let i = 0; i < 300 && alpha > 0.004; i++) { tick(alpha); alpha *= 0.97; } }
+      else { tick(alpha); alpha *= 0.985; }
+    }
+    for (const e of [...ents.values()]) {
+      const o = fade(e, now);
+      if (e.gone && o <= 0) { e.g.remove(); ents.delete(e.key); continue; }
+      e.g.setAttribute('transform', 'translate(' + e.x.toFixed(1) + ',' + e.y.toFixed(1) + ')');
+      if (!e.lw && e.label.textContent) setLabel(e, e.label.textContent);
+      const half = (e.lw || 0) / 2 + 4, lx = e.x - half < 0 ? half - e.x : e.x + half > W ? W - half - e.x : 0;
+      if (e.lx !== lx) { e.lx = lx; e.label.setAttribute('x', lx.toFixed(1)); }
+      e.g.style.opacity = (o * (e.dim || 1)).toFixed(3);
+    }
+    for (const L of [...homes.values()]) {
+      const o = fade(L, now), a = ents.get(L.a), b = ents.get(L.b);
+      if ((L.gone && o <= 0) || !a || !b) { L.el.remove(); homes.delete(L.key); continue; }
+      L.el.setAttribute('x1', a.x); L.el.setAttribute('y1', a.y); L.el.setAttribute('x2', b.x); L.el.setAttribute('y2', b.y);
+      L.el.style.opacity = (0.8 * o).toFixed(3);
+    }
+    const dt = Math.min(0.1, lastT ? (t - lastT) / 1000 : 0); lastT = t;
+    for (const L of [...links.values()]) {
+      const o = fade(L, now), l = L.data, a = ents.get('n:' + l.a), b = ents.get('n:' + l.b);
+      if ((L.gone && o <= 0) || !a || !b) {
+        for (const el of [L.glow, L.selp, L.line, L.hit, L.lbl, ...L.dots]) el.remove();
+        links.delete(L.key); continue;
+      }
+      const r = l.path === 'relay' && l.relay ? ents.get('r:' + normUrl(l.relay)) : null;
+      const pts = r ? [[a.x, a.y], [r.x, r.y], [b.x, b.y]] : [[a.x, a.y], [b.x, b.y]];
+      const d = 'M' + pts.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join('L');
+      for (const el of [L.glow, L.selp, L.line, L.hit]) el.setAttribute('d', d);
+      L.line.style.opacity = o.toFixed(3);
+      // path-change highlight
+      const hlAge = L.hl ? now - L.hl : Infinity;
+      if (hlAge < HL) {
+        const k = 1 - hlAge / HL, pulse = reduceMotion.matches ? 1 : 0.65 + 0.35 * Math.sin(hlAge / 160);
+        L.glow.style.stroke = l.path === 'direct' ? 'var(--direct)' : l.path === 'relay' ? 'var(--relay)' : 'var(--muted)';
+        L.glow.style.strokeWidth = (L.width || 2) + 14 * k + 'px';
+        L.glow.style.opacity = (0.45 * k * pulse * o).toFixed(3);
+      } else if (L.glow.style.opacity !== '0') { L.glow.style.opacity = '0'; L.hl = 0; }
+      // label: RTT, or the path change while highlighted
+      let lp;
+      if (r) { const s1 = Math.hypot(r.x - a.x, r.y - a.y), s2 = Math.hypot(b.x - r.x, b.y - r.y); lp = s1 >= s2 ? [(a.x + r.x) / 2, (a.y + r.y) / 2] : [(r.x + b.x) / 2, (r.y + b.y) / 2]; }
+      else lp = [(a.x + b.x) / 2, (a.y + b.y) / 2];
+      const hlOn = hlAge < HL;
+      const txt = hlOn ? L.hlText : num(l.rtt_ms) && links.size <= 24 ? fmtMs(l.rtt_ms) : '';
+      if (L.lbl.textContent !== txt) L.lbl.textContent = txt;
+      L.lbl.setAttribute('class', 'll' + (hlOn ? ' hl' : ''));
+      L.lbl.setAttribute('x', lp[0].toFixed(1)); L.lbl.setAttribute('y', (lp[1] - 6).toFixed(1));
+      L.lbl.style.opacity = o.toFixed(3);
+      // flow dots, alternating direction (traffic goes both ways)
+      const want = L.gone ? 0 : (L.ndots || 0);
+      while (L.dots.length < want) { const c = s('circle', { class: 'flow', r: 2.6 }); gFlow.append(c); L.dots.push(c); }
+      while (L.dots.length > want) L.dots.pop().remove();
+      if (want) {
+        const tot = at(pts, 0)[2] || 1;
+        L.phase = (L.phase + dt * L.speed / tot) % 1;
+        const cls = 'flow ' + (l.path === 'direct' || l.path === 'relay' ? l.path : 'unknown');
+        L.dots.forEach((c, i) => {
+          let f = (L.phase + Math.floor(i / 2) / Math.ceil(want / 2) + (i % 2) * 0.5 / Math.ceil(want / 2)) % 1;
+          if (i % 2) f = 1 - f;
+          const p = at(pts, f);
+          c.setAttribute('cx', p[0].toFixed(1)); c.setAttribute('cy', p[1].toFixed(1));
+          if (c.getAttribute('class') !== cls) c.setAttribute('class', cls);
+          const edge = Math.min(f, 1 - f) * tot; // fade near the nodes
+          c.style.opacity = (o * Math.min(1, edge / 18)).toFixed(3);
+        });
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // dragging
+  let start = null;
+  function toLocal(ev) { const r = svg.getBoundingClientRect(); return [(ev.clientX - r.left) * W / r.width, (ev.clientY - r.top) * H / r.height]; }
+  function startDrag(ev, e) {
+    if (ev.button !== undefined && ev.button !== 0) return;
+    dragging = e; start = { p: toLocal(ev), x: e.x, y: e.y, moved: false };
+    try { svg.setPointerCapture(ev.pointerId); } catch (err) { /* ignore */ }
+    ev.preventDefault(); hideTip();
+  }
+  svg.addEventListener('pointermove', (ev) => {
+    if (!dragging) return;
+    const p = toLocal(ev), dx = p[0] - start.p[0], dy = p[1] - start.p[1];
+    if (!start.moved && Math.hypot(dx, dy) < 5) return;
+    start.moved = true;
+    dragging.x = Math.min(W - 20, Math.max(20, start.x + dx)); dragging.y = Math.min(H - 20, Math.max(20, start.y + dy));
+    alpha = Math.max(alpha, 0.15);
+  });
+  const endDrag = () => {
+    if (!dragging) return;
+    const e = dragging; dragging = null;
+    if (start.moved) { e.pinned = true; save(); } else selectEnt(e);
+  };
+  svg.addEventListener('pointerup', endDrag);
+  svg.addEventListener('pointercancel', () => { dragging = null; });
+  function save() {
+    const out = {};
+    for (const e of ents.values()) if (!e.gone) out[e.key] = [+(e.x / W).toFixed(4), +(e.y / H).toFixed(4), e.pinned ? 1 : 0];
+    saved = Object.assign(saved, out); store.set('gp2p-pos', saved);
+  }
+  $('#relayout').addEventListener('click', () => {
+    store.del('gp2p-pos'); saved = {};
+    for (const e of ents.values()) {
+      const hs = fnv(e.key), ang = (hs % 3600) / 3600 * Math.PI * 2, rad = 0.16 + ((hs >>> 12) % 1000) / 1000 * 0.2;
+      e.pinned = false; e.x = W / 2 + Math.cos(ang) * rad * W; e.y = H / 2 + Math.sin(ang) * rad * H;
+    }
+    alpha = 1;
+  });
+  setInterval(save, 15000);
+  return { update, restyle };
+})();
+
+// map legend (static)
+(() => {
+  const sw = (...c) => s('svg', { width: 22, height: 14, 'aria-hidden': 'true' }, ...c);
+  const item = (svgEl, text) => h('span', { class: 'key' }, svgEl, text);
+  const hex = s('polygon', { points: '11,1 17.5,4.5 17.5,10.5 11,14 4.5,10.5 4.5,4.5', style: 'fill:var(--surface-2);stroke:var(--ink-2);stroke-width:1.3' });
+  $('#maplegend').append(
+    item(sw(s('line', { x1: 1, y1: 7, x2: 21, y2: 7, style: 'stroke:var(--direct);stroke-width:2.5' })), 'direct'),
+    item(sw(s('line', { x1: 1, y1: 7, x2: 21, y2: 7, style: 'stroke:var(--relay);stroke-width:2.5;stroke-dasharray:5 3' })), 'relayed'),
+    item(sw(hex), 'relay server'),
+    item(h('span', { class: 'dot good' }), 'online'), item(h('span', { class: 'dot warn' }), 'stale'),
+    item(h('span', { class: 'dot' }), 'offline'), item(h('span', { class: 'dot hollow good' }), 'not reporting'),
+  );
+})();
+
+// ---------- charts ----------
+const STEPS = [60, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400];
+function niceMax(v) {
+  if (!(v > 0)) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v))), m = v / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p;
+}
+function chart(el, opt) {
+  el.replaceChildren(); el._opt = opt;
+  const legend = el.parentElement && el.parentElement.querySelector('.legend');
+  if (legend && opt.series.length > 1) {
+    legend.replaceChildren(...opt.series.map((sr) => h('span', { class: 'key' }, h('i', { class: sr.dash ? 'dash' : '', style: 'border-color:' + sr.color }), sr.label)));
+  }
+  const W = Math.max(240, el.clientWidth || 300), Hh = opt.height || 150;
+  const m = { l: 46, r: 10, t: 8, b: 22 }, pw = W - m.l - m.r, ph = Hh - m.t - m.b;
+  const svg = s('svg', { viewBox: '0 0 ' + W + ' ' + Hh, height: Hh });
+  el.append(svg);
+  const data = (opt.data || []).filter((d) => d && num(d.t)).sort((a, b) => a.t - b.t);
+  const t1 = opt.now || Date.now(), t0 = t1 - opt.range * 1000;
+  const X = (t) => m.l + (t - t0) / (t1 - t0) * pw;
+  let ymax = 0;
+  for (const d of data) for (const sr of opt.series) { const v = sr.get ? sr.get(d) : d[sr.k]; if (num(v)) ymax = Math.max(ymax, v); }
+  ymax = niceMax(opt.minMax ? Math.max(ymax, opt.minMax) : ymax);
+  const Y = (v) => m.t + ph - v / ymax * ph;
+  for (let i = 0; i <= 2; i++) {
+    const v = ymax * i / 2, y = Math.round(Y(v)) + 0.5;
+    svg.append(s('line', { class: i === 0 ? 'base' : 'gl', x1: m.l, x2: W - m.r, y1: y, y2: y }));
+    svg.append(s('text', { class: 'ax', x: m.l - 6, y: y + 3.5, 'text-anchor': 'end' }, opt.fmt ? opt.fmt(v, true) : fmtNum(v)));
+  }
+  const maxTicks = Math.max(2, Math.floor(pw / 80));
+  const step = STEPS.find((x) => opt.range / x <= maxTicks) || 86400;
+  const tz = new Date().getTimezoneOffset() * 60000;
+  for (let t = Math.ceil((t0 - tz) / (step * 1000)) * step * 1000 + tz; t <= t1; t += step * 1000) {
+    const x = X(t); if (x < m.l + 10 || x > W - m.r - 10) continue;
+    const d = new Date(t);
+    const lbl = step >= 86400 ? DAYS[d.getDay()] + ' ' + d.getDate() : clock(t);
+    svg.append(s('text', { class: 'ax', x, y: Hh - 6, 'text-anchor': 'middle' }, lbl));
+  }
+  if (!data.length) { svg.append(s('text', { class: 'nodata', x: m.l + pw / 2, y: m.t + ph / 2 }, 'No data in this range')); return; }
+  const gapMs = 2.5 * (opt.step || 5) * 1000;
+  opt.series.forEach((sr, si) => {
+    let dLine = '', dArea = '', segStart = null, prevT = null, prevX = null;
+    const closeArea = () => { if (segStart !== null && sr.area) dArea += 'L' + prevX.toFixed(1) + ',' + Y(0).toFixed(1) + 'L' + segStart.toFixed(1) + ',' + Y(0).toFixed(1) + 'Z'; };
+    for (const d of data) {
+      const v = sr.get ? sr.get(d) : d[sr.k];
+      if (!num(v)) { closeArea(); segStart = null; prevT = null; continue; }
+      const x = X(d.t), y = Y(v);
+      if (prevT === null || d.t - prevT > gapMs) {
+        closeArea(); dLine += 'M' + x.toFixed(1) + ',' + y.toFixed(1); segStart = x;
+        if (sr.area) dArea += 'M' + x.toFixed(1) + ',' + y.toFixed(1);
+      } else { dLine += 'L' + x.toFixed(1) + ',' + y.toFixed(1); if (sr.area) dArea += 'L' + x.toFixed(1) + ',' + y.toFixed(1); }
+      prevT = d.t; prevX = x;
+    }
+    closeArea();
+    if (sr.area && dArea) svg.append(s('path', { d: dArea, style: 'fill:' + sr.color + ';opacity:.1;stroke:none' }));
+    svg.append(s('path', { class: 'ln', d: dLine || 'M0,0', style: 'stroke:' + sr.color + (sr.dash ? ';stroke-dasharray:5 4' : '') }));
+    // lone points (a segment of one sample) need a mark
+    data.forEach((d, i) => {
+      const v = sr.get ? sr.get(d) : d[sr.k]; if (!num(v)) return;
+      const p = data[i - 1], n = data[i + 1];
+      const lp = !p || d.t - p.t > gapMs || !num(sr.get ? sr.get(p) : p[sr.k]), ln = !n || n.t - d.t > gapMs || !num(sr.get ? sr.get(n) : n[sr.k]);
+      if (lp && ln) svg.append(s('circle', { cx: X(d.t), cy: Y(v), r: 2.5, style: 'fill:' + sr.color }));
+    });
+    void si;
+  });
+  // hover layer
+  const xh = s('line', { class: 'xh', y1: m.t, y2: m.t + ph, style: 'display:none' });
+  const dots = opt.series.map((sr) => s('circle', { r: 4, style: 'fill:' + sr.color + ';stroke:var(--surface);stroke-width:2;display:none' }));
+  const hit = s('rect', { x: m.l, y: 0, width: pw, height: Hh, fill: 'transparent' });
+  svg.append(xh, ...dots, hit);
+  const move = (ev) => {
+    const r = svg.getBoundingClientRect(), x = (ev.clientX - r.left) * W / r.width;
+    const t = t0 + (x - m.l) / pw * (t1 - t0);
+    let lo = 0, hi = data.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (data[mid].t < t) lo = mid; else hi = mid; }
+    const d = Math.abs(data[lo].t - t) <= Math.abs(data[hi].t - t) ? data[lo] : data[hi];
+    const px = X(d.t);
+    xh.setAttribute('x1', px); xh.setAttribute('x2', px); xh.style.display = '';
+    const rows = opt.series.map((sr, i) => {
+      const v = sr.get ? sr.get(d) : d[sr.k];
+      if (num(v)) { dots[i].setAttribute('cx', px); dots[i].setAttribute('cy', Y(v)); dots[i].style.display = ''; } else dots[i].style.display = 'none';
+      return { color: sr.color, dash: sr.dash, value: opt.fmt ? opt.fmt(v) : fmtNum(v), label: sr.label };
+    });
+    const st0 = opt.step >= 3600 ? new Date(d.t).toLocaleString() : (opt.range > 86400 ? DAYS[new Date(d.t).getDay()] + ' ' : '') + clockS(d.t);
+    showTip(ev, st0 + (opt.step > 5 ? ' (' + fmtDur(opt.step) + ')' : ''), rows);
+  };
+  hit.addEventListener('pointermove', move); hit.addEventListener('pointerdown', move);
+  hit.addEventListener('pointerleave', () => { xh.style.display = 'none'; dots.forEach((c) => (c.style.display = 'none')); hideTip(); });
+}
+const rateFmt = (v, axis) => (num(v) ? (axis ? fmtBytes(v).replace(' ', '') + '/s' : fmtRate(v)) : '–');
+function renderCharts() {
+  const H = st.hist; if (!H) return;
+  const base = { now: H.now || serverNow(), range: H.range_s || st.range, step: H.step_s || 5, data: H.network || [] };
+  chart($('#c-nodes'), Object.assign({}, base, { series: [{ k: 'nodes', label: 'Nodes online', color: 'var(--direct)', area: true }], minMax: 1 }));
+  chart($('#c-links'), Object.assign({}, base, { series: [{ k: 'direct', label: 'Direct', color: 'var(--direct)' }, { k: 'relay', label: 'Relayed', color: 'var(--relay)', dash: true }], minMax: 1 }));
+  chart($('#c-traffic'), Object.assign({}, base, { fmt: rateFmt, series: [{ k: 'rate_in', label: 'In', color: 'var(--direct)' }, { k: 'rate_out', label: 'Out', color: 'var(--s3)' }, { k: 'rate_relay', label: 'Via relays', color: 'var(--relay)', dash: true }] }));
+  chart($('#c-fail'), Object.assign({}, base, { minMax: 1, series: [{ k: 'conns_failed', label: 'Failed connections', color: 'var(--red)' }, { k: 'requests_failed', label: 'Failed requests', color: 'var(--violet)' }, { k: 'path_changes', label: 'Path changes', color: 'var(--s3)', dash: true }] }));
+  const res = (H.step_s || 5) <= 5 ? '5 s samples' : fmtDur(H.step_s) + ' buckets';
+  $('#histinfo').textContent = res + ' · counts per bucket';
+}
+document.querySelectorAll('.rangebar [data-range]').forEach((b) => {
+  b.addEventListener('click', () => {
+    st.range = +b.dataset.range; store.set('gp2p-range', st.range); markRange();
+    document.querySelectorAll('.charts .chart').forEach((c) => c.classList.add('loading'));
+    pollHistory();
+  });
+});
+function markRange() { document.querySelectorAll('.rangebar [data-range]').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.range === st.range))); }
+
+// ---------- node table ----------
+const COLS = [
+  { k: 'name', l: 'Node', v: (n) => nodeLabel(n).toLowerCase(), r: (n) => h('div', { class: 'nm' }, statusDot(n), h('div', null, h('b', null, trunc(nodeLabel(n), 32)), n.name ? h('div', { class: 'id' }, shortId(n.id)) : null)) },
+  { k: 'status', l: 'Status', v: (n) => (STATUS_RANK[n.status] ?? 3) + (n.reporting === false ? 0.5 : 0), r: (n) => (n.reporting === false ? 'not reporting' : (n.stopped ? 'stopped' : n.status || '?') + (n.last_seen ? ' · ' + ago(n.last_seen) : '')) },
+  { k: 'version', l: 'Version', v: (n) => n.version || '', r: (n) => (n.version || '–') + (n.commit ? ' (' + n.commit + ')' : '') },
+  { k: 'command', l: 'Cmd', v: (n) => n.command || '', r: (n) => n.command || '–' },
+  { k: 'uptime', l: 'Uptime', num: 1, v: (n) => n.uptime_s ?? -1, r: (n) => fmtDur(n.uptime_s) },
+  { k: 'conns', l: 'Direct / relayed', num: 1, v: (n) => (n.conns_direct || 0) + (n.conns_relay || 0), r: (n) => (n.reporting === false ? '–' : (n.conns_direct || 0) + ' / ' + (n.conns_relay || 0)) },
+  { k: 'rate', l: 'Rate in / out', num: 1, v: (n) => (n.rate_in || 0) + (n.rate_out || 0), r: (n) => fmtRate(n.rate_in) + ' / ' + fmtRate(n.rate_out) },
+  { k: 'bytes', l: 'Total in / out', num: 1, v: (n) => (n.totals ? (n.totals.bytes_in || 0) + (n.totals.bytes_out || 0) : -1), r: (n) => (n.totals ? fmtBytes(n.totals.bytes_in) + ' / ' + fmtBytes(n.totals.bytes_out) : '–') },
+  { k: 'fail', l: 'Failures', num: 1, v: (n) => (n.totals ? (n.totals.conns_failed || 0) + (n.totals.requests_failed || 0) : -1), r: (n) => (n.totals ? fmtNum((n.totals.conns_failed || 0) + (n.totals.requests_failed || 0)) : '–') },
+  { k: 'err', l: 'Last error', v: (n) => (n.last_error && n.last_error.at) || 0, r: (n) => (n.last_error ? h('span', { class: 'err' }, String(n.last_error.kind || 'error') + (n.last_error.at ? ' · ' + ago(n.last_error.at) : '')) : '–') },
+];
+function renderTableHead() {
+  $('#thead').replaceChildren(...COLS.map((c) => {
+    const th = h('th', { class: c.num ? 'num' : '', scope: 'col', tabindex: '0' }, c.l);
+    if (st.sort.key === c.k) th.setAttribute('aria-sort', st.sort.dir > 0 ? 'ascending' : 'descending');
+    const go = () => { st.sort = { key: c.k, dir: st.sort.key === c.k ? -st.sort.dir : 1 }; renderTableHead(); renderTable(); };
+    th.addEventListener('click', go); th.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    return th;
+  }));
+}
+function renderTable() {
+  const nodes = [...(st.state && st.state.nodes || [])];
+  const col = COLS.find((c) => c.k === st.sort.key) || COLS[1];
+  nodes.sort((a, b) => { const x = col.v(a), y = col.v(b); return (x < y ? -1 : x > y ? 1 : 0) * st.sort.dir || nodeLabel(a).localeCompare(nodeLabel(b)); });
+  const rows = nodes.map((n) => {
+    const tr = h('tr', { tabindex: '0', class: n.status === 'offline' || n.reporting === false ? 'dim' : '' }, ...COLS.map((c) => h('td', { class: c.num ? 'num' : '' }, c.r(n))));
+    tr.addEventListener('click', () => select({ type: 'node', id: n.id }));
+    tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') select({ type: 'node', id: n.id }); });
+    return tr;
+  });
+  if (!rows.length) rows.push(h('tr', null, h('td', { colspan: COLS.length, style: 'color:var(--muted);text-align:center;padding:24px' }, 'No nodes have reported yet.')));
+  $('#tbody').replaceChildren(...rows);
+  const rep = nodes.filter((n) => n.reporting !== false).length;
+  $('#tablenote').textContent = rep + ' reporting · ' + (nodes.length - rep) + ' seen only as peers';
+}
+
+// ---------- details panel ----------
+const panel = $('#panel');
+function select(sel) {
+  st.sel = sel; st.panelHist = null;
+  st.panelKey = sel ? sel.type + ':' + (sel.id || sel.url || sel.a + ',' + sel.b) : '';
+  const hash = !sel ? '' : sel.type === 'node' ? '#node=' + sel.id : sel.type === 'link' ? '#link=' + sel.a + ',' + sel.b : '#relay=' + encodeURIComponent(sel.url);
+  try { history.replaceState(null, '', location.pathname + location.search + hash); } catch (e) { /* ignore */ }
+  renderPanel(); Net.restyle(); hideTip();
+  if (sel) pollPanel();
+}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && st.sel) select(null); });
+function kv(pairs) { const dl = h('dl', { class: 'kv' }); for (const [k, v] of pairs) dl.append(h('dt', null, k), h('dd', null, v ?? '–')); return dl; }
+function nodeBtn(id) { return h('button', { class: 'linkish', type: 'button', onclick: () => select({ type: 'node', id }) }, nodeName(id)); }
+function pathLabel(p) { return p === 'direct' ? 'direct' : p === 'relay' ? 'relayed' : 'unknown'; }
+function natText(n) {
+  if (!n) return 'not known yet';
+  const yn = (v) => (v === true ? 'yes' : v === false ? 'no' : '?');
+  const parts = ['UDP v4 ' + yn(n.udp_v4) + ', v6 ' + yn(n.udp_v6)];
+  if (n.behind_nat_v4 != null) parts.push(n.behind_nat_v4 ? 'behind NAT' : 'no NAT (v4)');
+  if (n.port_preserved_v4 != null) parts.push(n.port_preserved_v4 ? 'port kept' : 'port changed');
+  if (n.mapping_varies != null) parts.push(n.mapping_varies ? 'mapping varies per destination (hard NAT)' : 'mapping stable');
+  if (n.captive_portal) parts.push('captive portal');
+  return parts.join(' · ');
+}
+function miniChart(title, opt) {
+  const box = h('div', { class: 'chart' });
+  const wrap = h('div', null, h('div', { class: 'psec' }, title), h('div', { class: 'legend' }), box);
+  requestAnimationFrame(() => chart(box, Object.assign({ height: 120 }, opt)));
+  return wrap;
+}
+function renderPanel() {
+  const sel = st.sel;
+  panel.classList.toggle('open', !!sel); panel.setAttribute('aria-hidden', String(!sel));
+  if (!sel || !st.state) return;
+  const scroll = panel.scrollTop;
+  const close = h('button', { class: 'btn x', type: 'button', 'aria-label': 'Close', onclick: () => select(null) }, '✕');
+  const S = st.state, PH = st.panelHist, out = [];
+  const hb = PH ? { now: PH.now || serverNow(), range: PH.range_s || 3600, step: PH.step_s || 5 } : null;
+  if (sel.type === 'node') {
+    const n = nodeById(sel.id) || { id: sel.id, reporting: false };
+    const copy = h('button', { class: 'btn copy', type: 'button', onclick: () => { try { navigator.clipboard.writeText(n.id); } catch (e) { /* ignore */ } } }, 'copy');
+    out.push(h('div', { class: 'ph' }, h('div', null, h('h3', null, nodeLabel(n)), h('div', { class: 'id' }, n.id, copy)), close));
+    out.push(h('div', null, h('span', { class: 'pill' }, statusDot(n), n.reporting === false ? 'not reporting' : (n.stopped ? 'stopped' : n.status || '?')),
+      n.last_seen ? h('span', { class: 'pill' }, 'seen ' + ago(n.last_seen)) : null, n.command ? h('span', { class: 'pill' }, n.command) : null));
+    if (n.reporting === false) out.push(h('p', { style: 'color:var(--ink-2);font-size:13px' }, 'This node does not send telemetry (opted out, or an older version). It appears because reporting nodes are connected to it.'));
+    else {
+      out.push(kv([
+        ['Version', (n.version || '–') + (n.commit ? ' (' + n.commit + ')' : '')], ['Platform', [n.os, n.arch].filter(Boolean).join(' / ') || '–'],
+        ['Uptime', fmtDur(n.uptime_s)], ['Reports', n.interval_s ? 'every ' + n.interval_s + ' s' : '–'], ['Transport', (n.transport || '–').replace(/_/g, ' ')],
+        ['Home relay', n.home_relay ? relayHost(n.home_relay) + (n.home_relay_connected === false ? ' (not connected)' : n.home_relay_connected ? ' (connected)' : '') : '–'],
+        ['NAT', natText(n.nat)], ['Connections', (n.conns_direct || 0) + ' direct · ' + (n.conns_relay || 0) + ' relayed'],
+        ['Traffic now', fmtRate(n.rate_in) + ' in · ' + fmtRate(n.rate_out) + ' out'],
+        ['Last error', n.last_error ? h('span', { class: 'err' }, String(n.last_error.kind || 'error') + (n.last_error.at ? ' · ' + ago(n.last_error.at) : '')) : 'none'],
+      ]));
+      const t = n.totals || {};
+      const row = (k, v) => h('tr', null, h('td', null, k), h('td', { class: 'num' }, v));
+      out.push(h('div', { class: 'psec' }, 'Since start'), h('table', { class: 'tot' }, h('tbody', null,
+        row('New connections', fmtNum(t.conns_new)), row('Failed connections', fmtNum(t.conns_failed)), row('Path changes', fmtNum(t.path_changes)),
+        row('Requests ok / failed', fmtNum(t.requests_ok) + ' / ' + fmtNum(t.requests_failed)),
+        row('Bytes in / out', fmtBytes(t.bytes_in) + ' / ' + fmtBytes(t.bytes_out)), row('Via relays in / out', fmtBytes(t.bytes_in_relay) + ' / ' + fmtBytes(t.bytes_out_relay)))));
+    }
+    const mine = (S.links || []).filter((l) => l.a === n.id || l.b === n.id);
+    out.push(h('div', { class: 'psec' }, 'Links (' + mine.length + ')'));
+    if (!mine.length) out.push(h('div', { style: 'color:var(--muted);font-size:13px' }, 'No live connections.'));
+    for (const l of mine) {
+      const other = l.a === n.id ? l.b : l.a;
+      out.push(h('div', { class: 'plink', onclick: () => select({ type: 'link', a: l.a, b: l.b }) },
+        h('i', { style: 'width:16px;border-top:2px ' + (l.path === 'relay' ? 'dashed var(--relay)' : l.path === 'direct' ? 'solid var(--direct)' : 'dotted var(--muted)') }),
+        nodeName(other), h('span', { class: 'rt' }, pathLabel(l.path) + ' · ' + fmtMs(l.rtt_ms))));
+    }
+    if (n.reporting !== false) {
+      if (hb) {
+        out.push(miniChart('Connections, last hour', Object.assign({}, hb, { data: PH.node || [], minMax: 1, series: [{ k: 'direct', label: 'Direct', color: 'var(--direct)' }, { k: 'relay', label: 'Relayed', color: 'var(--relay)', dash: true }] })));
+        out.push(miniChart('Traffic, last hour', Object.assign({}, hb, { data: PH.node || [], fmt: rateFmt, series: [{ k: 'rate_in', label: 'In', color: 'var(--direct)' }, { k: 'rate_out', label: 'Out', color: 'var(--s3)' }] })));
+      } else out.push(h('div', { class: 'psec' }, 'Loading history…'));
+    }
+  } else if (sel.type === 'link') {
+    const l = (S.links || []).find((x) => linkKey(x.a, x.b) === linkKey(sel.a, sel.b));
+    out.push(h('div', { class: 'ph' }, h('h3', null, nodeName(sel.a) + ' ⇄ ' + nodeName(sel.b)), close));
+    if (!l) out.push(h('p', { style: 'color:var(--ink-2)' }, 'This link is not live now.'));
+    else {
+      const by = l.reported_by || [];
+      out.push(h('div', null, h('span', { class: 'pill' }, h('i', { style: 'width:14px;border-top:2px ' + (l.path === 'relay' ? 'dashed var(--relay)' : l.path === 'direct' ? 'solid var(--direct)' : 'dotted var(--muted)') }), pathLabel(l.path))));
+      out.push(kv([
+        ['Ends', h('span', null, nodeBtn(l.a), ' and ', nodeBtn(l.b))], ['Path', pathLabel(l.path) + (l.path === 'relay' && l.relay ? ' via ' + relayHost(l.relay) : '')],
+        ['RTT', fmtMs(l.rtt_ms)], ['Traffic', fmtRate(l.rate)], ['On this path', num(l.path_since) ? fmtDur((serverNow() - l.path_since) / 1000) + ' (since ' + clockS(l.path_since) + ')' : '–'],
+        ['Path changes', fmtNum(l.path_changes || 0)], ['Reported by', by.length >= 2 ? 'both ends' : by.length === 1 ? nodeName(by[0]) + ' only' : '–'],
+      ]));
+    }
+    if (hb) {
+      const data = (PH.link || []).filter((d) => num(d.t)).sort((a, b) => a.t - b.t);
+      const t0 = hb.now - hb.range * 1000, bar = h('div', { class: 'timeline', role: 'img', 'aria-label': 'path over the last hour' });
+      let cur = null, from = t0;
+      const push = (to, p) => { if (to > from) bar.append(h('span', { style: 'flex:' + (to - from) + ';background:' + (p === 'direct' ? 'var(--direct)' : p === 'relay' ? 'var(--relay)' : 'transparent'), title: (p ? pathLabel(p) : 'no link') + ' from ' + clock(from) + ' to ' + clock(to) })); from = to; };
+      for (const d of data) {
+        const p = d.path || null; const tt = Math.max(t0, d.t);
+        if (p !== cur) { push(tt, cur); cur = p; }
+      }
+      const lastT = data.length ? data[data.length - 1].t + hb.step * 1000 : t0;
+      push(Math.min(hb.now, lastT), cur); push(hb.now, null);
+      out.push(h('div', { class: 'psec' }, 'Path, last hour'), bar, h('div', { class: 'tlaxis' }, h('span', null, '−60 min'), h('span', null,
+        h('span', { class: 'key' }, h('i', { class: 'sq', style: 'background:var(--direct)' }), 'direct'), h('span', { class: 'key' }, h('i', { class: 'sq', style: 'background:var(--relay)' }), 'relayed')), h('span', null, 'now')));
+      out.push(miniChart('Round-trip time', Object.assign({}, hb, { data, fmt: (v) => (num(v) ? fmtMs(v) : '–'), series: [{ k: 'rtt_ms', label: 'RTT', color: 'var(--direct)', area: true }] })));
+      out.push(miniChart('Traffic', Object.assign({}, hb, { data, fmt: rateFmt, series: [{ k: 'rate', label: 'Both directions', color: 'var(--s3)', area: true }] })));
+    } else out.push(h('div', { class: 'psec' }, 'Loading history…'));
+  } else if (sel.type === 'relay') {
+    const k = normUrl(sel.url);
+    const homed = (S.nodes || []).filter((n) => normUrl(n.home_relay) === k);
+    const via = (S.links || []).filter((l) => l.path === 'relay' && normUrl(l.relay) === k);
+    out.push(h('div', { class: 'ph' }, h('div', null, h('h3', null, relayHost(sel.url)), h('div', { class: 'id' }, sel.url)), close));
+    out.push(h('p', { style: 'color:var(--ink-2);font-size:13px' }, 'A public relay: it forwards end-to-end encrypted traffic when nodes cannot reach each other directly.'));
+    out.push(h('div', { class: 'psec' }, 'Homed here (' + homed.length + ')'));
+    for (const n of homed) out.push(h('div', { class: 'plink', onclick: () => select({ type: 'node', id: n.id }) }, statusDot(n), nodeLabel(n), h('span', { class: 'rt' }, n.home_relay_connected === false ? 'not connected' : 'connected')));
+    out.push(h('div', { class: 'psec' }, 'Relayed links (' + via.length + ')'));
+    for (const l of via) out.push(h('div', { class: 'plink', onclick: () => select({ type: 'link', a: l.a, b: l.b }) }, nodeName(l.a) + ' ⇄ ' + nodeName(l.b), h('span', { class: 'rt' }, fmtMs(l.rtt_ms) + ' · ' + fmtRate(l.rate))));
+  }
+  panel.replaceChildren(...out);
+  panel.scrollTop = scroll;
+}
+
+// ---------- main ----------
+function renderAll() {
+  renderTiles();
+  Net.update(st.state);
+  renderTable();
+  if (st.sel) renderPanel();
+}
+function fromHash() {
+  const m = /^#(node|link|relay)=(.+)$/.exec(location.hash);
+  if (!m) return null;
+  const v = decodeURIComponent(m[2]);
+  if (m[1] === 'node') return { type: 'node', id: v };
+  if (m[1] === 'relay') return { type: 'relay', url: v };
+  const [a, b] = v.split(','); return a && b ? { type: 'link', a, b } : null;
+}
+let resizeT = 0;
+addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { renderCharts(); if (st.sel) renderPanel(); }, 150); });
+const r0 = store.get('gp2p-range'); if ([900, 3600, 21600, 86400, 604800].includes(r0)) st.range = r0;
+markRange(); renderTableHead();
+const hs = fromHash();
+if (hs) { st.sel = hs; st.panelKey = hs.type + ':' + (hs.id || hs.url || hs.a + ',' + hs.b); }
+pollState().then(() => { if (st.sel) pollPanel(); });
+pollHistory();
+})();
+</script>
+</body>
+</html>

@@ -284,6 +284,7 @@ async fn watch_path(
         Direction::Incoming => "in",
     };
     let mut last = SelectedPath::of(&conn);
+    crate::telemetry::path_seen(conn.stable_id(), last.kind);
     if out.json() {
         out.event("conn")
             .field("peer", peer_id.as_str())
@@ -307,6 +308,7 @@ async fn watch_path(
         if now == last {
             continue;
         }
+        crate::telemetry::path_seen(conn.stable_id(), now.kind);
         if out.json() {
             out.event("path_change")
                 .field("peer", conn.peer().default_id().to_string())
@@ -331,6 +333,7 @@ async fn watch_path(
         last = now;
     }
     watched.lock().expect("poisoned").remove(&conn.stable_id());
+    crate::telemetry::path_closed(conn.stable_id());
 }
 
 /// Reports the home relay and whether we are connected to it.

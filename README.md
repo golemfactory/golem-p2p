@@ -29,6 +29,12 @@ relay-based networking in yagna (`ya-relay`).
   IDs and which issues short-lived membership certificates; nodes (and
   optionally the directory) refuse peers without one. Relays stay public.
   See [docs/design.md](docs/design.md), section 13a.
+* **Telemetry (closed networks):** `listen` and `soak` report their health
+  (version, uptime, connections with path and RTT, traffic, failures; no IP
+  addresses) every 5 s to the collector the registry advertises, signed and
+  members only; opt out with `--no-telemetry`. The collector serves a live
+  dashboard, JSON and Prometheus metrics. See
+  [docs/telemetry.md](docs/telemetry.md).
 
 ## Status
 
@@ -43,8 +49,9 @@ design, the decisions taken, and the open questions.
 
 ```
 crates/golem-p2p        core library
-crates/golem-p2p-cli    `golem-p2p` command line tool (directory, registry, listen, send, probe, bench, soak)
+crates/golem-p2p-cli    `golem-p2p` command line tool (directory, registry, telemetry collector, listen, send, probe, bench, soak)
 docs/design.md          design document
+docs/telemetry.md       telemetry of closed networks: what nodes send, opt-out, collector, dashboard, Prometheus
 docs/cli-events.md      JSON events of the CLI (`--json`), for test harnesses
 docs/security-checks.md security checks in CI (dependencies, workflows, secrets) and how to run them
 harness/                NAT lab, benchmark campaigns, soak tests and their results
@@ -87,8 +94,9 @@ What the tests cover:
 | `relay_url.rs` (CLI) | `http://` and other non-https relay URLs rejected on the command line |
 | `probe.rs` (CLI) | `--json` output of `listen`, `probe` and `send` as child processes: relay-only probe with bulk transfer (every line parses, common fields, summary consistent with the replies, listener saw every request and the bulk bytes over the relay); probe that ends on a direct path with `time_to_direct_ms`; unknown node fails with exit code 1; SIGTERM ends a probe with a summary; a bulk upload above the listener's `--max-transfer-size` is refused (exit code 3, cause `refused`), one within it works; an echo request that is never finished is refused after 10 s; `keygen`/`directory` with `--json`, error event and exit code |
 | `relay_quic.rs` (CLI) | the relay's QUIC address discovery port (`--relay-quic-port`, per relay `,quic=PORT`, `off`) reaches iroh: a local relay with QAD on a random port sees QAD connections; invalid ports rejected |
+| `telemetry.rs` (CLI) | a registry advertising a collector (`telemetry serve` as a child process); `listen` and `soak` nodes report to it and appear online with their link merged from both ends; nodes opted out by `--no-telemetry` and by `GOLEM_P2P_NO_TELEMETRY` never report (one shows up as a non-reporting peer); no IP address in the collector's state; a node that stops is offline at once (last report); Prometheus output |
 | `bench.rs` (CLI) | `bench --json` against a local listener: relay-only (exit code 4, every phase over the relay, transfers capped for the relay, the listener saw the upload and download) and normal (exit code 0, QAD answers, direct path, `--compare-relay` over the relay, `--idle`); the listener's limits (too large and busy refused cleanly with exit code 5, exactly the limit works); uploads, downloads and parallel requests end at `--transfer-time` (a stopped upload is still counted by the listener, cut-off requests are not failures); smaller parallel requests after slow transfers, still with a throughput; local check only, healthy and with an untrusted relay certificate; unknown node (exit code 3); SIGTERM ends a bench with a report; invalid arguments |
-| unit tests | yagna/ethsign compatibility vectors, record verification (including https-only relay URLs, and records of older nodes that list Docker addresses), record store rules and bounds, published addresses (container and VM bridges left out, LAN and VPN kept, ranking before the cap, IPv6); CLI: argument parsers, timestamps, percentiles, jitter, refusals, the bench verdict rules, the latency phase's loss window, the wait for an upload's count, the size of parallel requests, the soak client's RTT histogram and percentiles |
+| unit tests | yagna/ethsign compatibility vectors, record verification (including https-only relay URLs, and records of older nodes that list Docker addresses), record store rules and bounds, published addresses (container and VM bridges left out, LAN and VPN kept, ranking before the cap, IPv6); CLI: argument parsers, timestamps, percentiles, jitter, refusals, the bench verdict rules, the latency phase's loss window, the wait for an upload's count, the size of parallel requests, the soak client's RTT histogram and percentiles; telemetry: report signatures and certificates (valid, wrong network, untrusted registry, expired, someone else's certificate, tampered body, garbage signature, oversized), the collector's checks (replay and reordering, stale timestamps, signer other than `node_id`, malformed reports, per-node rate limit), links merged from both ends, node status (online, stale, offline, stopped), 5 s history and per-minute aggregates, the store across restarts (replays still refused), Prometheus text, the HTTP API and the dashboard page |
 
 ## Trying it between two machines
 

@@ -389,10 +389,26 @@ would be two of three. Beyond 200 packets one lost packet is less than 0.5%,
 so a longer phase only helps much from about 400 packets, about 30 s, on.)
 Loss of packets the peer sends is not measured (`download_loss`).
 
-### `keygen`, `directory`
+### `keygen`, `directory`, `telemetry_collector`
 
 `keygen --json` prints `{"event":"keygen", "node_id", "key_file"}`;
-`directory --json` prints `{"event":"directory", "url"}` once it listens.
+`directory --json` prints `{"event":"directory", "url"}` once it listens;
+`telemetry serve --json` prints `{"event":"telemetry_collector", "url",
+"network"}` once it listens.
+
+### `telemetry` (listen, soak)
+
+Right after `ready`, `listen` and `soak` say whether they send telemetry
+reports ([telemetry.md](telemetry.md)):
+
+| field | type | meaning |
+|---|---|---|
+| `enabled` | bool | reports are on: a closed network (`--registry`) and no `--no-telemetry` / `GOLEM_P2P_NO_TELEMETRY` |
+| `url` | string or null | the `--telemetry` URL; null when the URL comes from the registry (looked up in the background) or reports are off |
+| `interval_s` | number | `--telemetry-interval` |
+
+Whether reports are accepted is only logged (stderr), never an event: the
+first failure at `warn`, later ones at `debug`.
 
 ### `stats` (listen, directory)
 
@@ -418,7 +434,8 @@ application), `cached_identities` and `cached_endpoints` (the peer record
 cache, at most 4096 each). Totals since start: `connections_outgoing`,
 `connections_incoming` (completed handshakes), `connections_closed`,
 `handshakes_failed` (incoming connections refused or failed in the
-handshake), `streams_accepted` (requests handed to the application),
+handshake), `connects_failed` (connects to a peer that failed: lookup,
+dial, handshake or refusal), `streams_accepted` (requests handed to the application),
 `streams_refused` (reset before: bad header, unknown identity, sender not
 bound, queue full). `iroh`: iroh's socket counters `conns_opened`,
 `conns_closed`, `conns_direct`, `paths_direct`, `paths_relay`,

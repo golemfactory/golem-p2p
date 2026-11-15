@@ -142,7 +142,7 @@ fn add_latencies(r: &IrohReport, relays: &mut [RelayCheck]) {
     }
 }
 
-fn convert(r: &IrohReport, ep: &Endpoint) -> NetReport {
+pub(crate) fn convert(r: &IrohReport, ep: &Endpoint) -> NetReport {
     let mut v4 = BTreeSet::<&RelayUrl>::new();
     let mut v6 = BTreeSet::<&RelayUrl>::new();
     for (probe, url, _) in r.relay_latency.iter() {

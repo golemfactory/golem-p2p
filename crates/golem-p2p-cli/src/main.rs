@@ -11,6 +11,7 @@
 //!                  --relay https://relay.example/ --to 0x<alice node id> --duration 30s --bulk 4M
 //! golem-p2p bench  --directory http://dir:8080/ --relay https://relay.example/ \
 //!                  --to 0x<alice node id>
+//! golem-p2p telemetry serve --registry-key <hex> --store telemetry/
 //! ```
 //!
 //! Relay URLs must use `https`. For a relay with a self-signed certificate,
@@ -28,6 +29,7 @@ mod parse;
 mod probe;
 mod registry;
 mod soak;
+mod telemetry;
 
 use std::{
     net::SocketAddr,
@@ -122,6 +124,8 @@ enum Cmd {
         /// tables, counters) this often.
         #[arg(long, value_parser = parse::duration)]
         stats_interval: Option<Duration>,
+        #[command(flatten)]
+        telemetry: telemetry::TelemetryArgs,
     },
     /// Send a request to a node and print the reply.
     Send {
@@ -169,6 +173,12 @@ enum Cmd {
     Registry {
         #[command(subcommand)]
         cmd: registry::RegistryCmd,
+    },
+    /// Telemetry collector of a closed network: members' reports, a
+    /// dashboard, a JSON API and Prometheus metrics (see docs/telemetry.md).
+    Telemetry {
+        #[command(subcommand)]
+        cmd: telemetry::collector::TelemetryCmd,
     },
 }
 
@@ -388,15 +398,20 @@ fn parse_registry_key(hex_key: &str) -> anyhow::Result<golem_p2p::iroh::PublicKe
 }
 
 /// Binds an endpoint. `timeout` sets the connect and request timeouts.
-async fn bind(args: &NodeArgs, timeout: Option<Duration>) -> anyhow::Result<Endpoint> {
+/// Returns the endpoint and its signer (which holds the identity keys).
+async fn bind(
+    args: &NodeArgs,
+    timeout: Option<Duration>,
+) -> anyhow::Result<(Endpoint, InMemorySigner)> {
     let (signer, ids) = identities(args)?;
-    let b = builder(args, signer, ids, directories(args)?, timeout)?;
-    Ok(b.bind().await?)
+    let b = builder(args, signer.clone(), ids, directories(args)?, timeout)?;
+    Ok((b.bind().await?, signer))
 }
 
 /// A bound endpoint whose events are reported from the start.
 struct Node {
     ep: Endpoint,
+    signer: InMemorySigner,
     _observer: Observer,
 }
 
@@ -409,14 +424,46 @@ impl Node {
         path_log: Option<Arc<PathLog>>,
     ) -> anyhow::Result<Self> {
         let started = Instant::now();
-        let ep = bind(args, timeout).await?;
-        Ok(Self::bound(ep, started.elapsed(), args, out, path_log))
+        let (ep, signer) = bind(args, timeout).await?;
+        Ok(Self::bound(
+            ep,
+            signer,
+            started.elapsed(),
+            args,
+            out,
+            path_log,
+        ))
+    }
+
+    /// Starts telemetry reports of this node (if on, see
+    /// [`telemetry::Telemetry::start`]).
+    fn telemetry(
+        &self,
+        args: &telemetry::TelemetryArgs,
+        node: &NodeArgs,
+        command: &'static str,
+        out: &Out,
+    ) -> anyhow::Result<Option<telemetry::Telemetry>> {
+        telemetry::Telemetry::start(
+            args,
+            node,
+            &self.ep,
+            self.signer.clone(),
+            telemetry::NodeInfo {
+                command,
+                name: out.node_name(),
+                transport: node.mode(),
+                interval: args.telemetry_interval,
+            },
+            out,
+        )
     }
 
     /// Emits the `ready` event for an endpoint that was just bound (in
     /// `bind_time`) and starts reporting its events.
     fn bound(
         ep: Endpoint,
+        signer: InMemorySigner,
         bind_time: Duration,
         args: &NodeArgs,
         out: &Out,
@@ -460,6 +507,7 @@ impl Node {
         let observer = Observer::spawn(&ep, events, out, path_log);
         Self {
             ep,
+            signer,
             _observer: observer,
         }
     }
@@ -576,12 +624,13 @@ async fn run(cmd: Cmd, out: &Out) -> anyhow::Result<ExitCode> {
             }
         }
         Cmd::Listen {
-            node,
+            node: node_args,
             duration,
             limits,
             stats_interval,
+            telemetry,
         } => {
-            if node.key.is_none() {
+            if node_args.key.is_none() {
                 Cli::command()
                     .error(
                         clap::error::ErrorKind::MissingRequiredArgument,
@@ -590,7 +639,8 @@ async fn run(cmd: Cmd, out: &Out) -> anyhow::Result<ExitCode> {
                     .exit();
             }
             let limits = limits.limits();
-            let node = Node::start(&node, out, None, None).await?;
+            let node = Node::start(&node_args, out, None, None).await?;
+            let telemetry = node.telemetry(&telemetry, &node_args, "listen", out)?;
             let ep = &node.ep;
             let _stats = stats_interval
                 .map(|i| soak::spawn_stats(out, i, soak::StatsSource::Endpoint(ep.clone())));
@@ -628,6 +678,9 @@ async fn run(cmd: Cmd, out: &Out) -> anyhow::Result<ExitCode> {
                 _ = listen::serve(ep.clone(), out.clone(), limits) => {}
                 _ = shutdown_signal() => {}
                 _ = stop => {}
+            }
+            if let Some(t) = telemetry {
+                t.finish().await;
             }
             ep.close().await;
         }
@@ -672,6 +725,7 @@ async fn run(cmd: Cmd, out: &Out) -> anyhow::Result<ExitCode> {
         Cmd::Bench(args) => return bench::run(args, out).await,
         Cmd::Soak(args) => return soak::run(args, out).await,
         Cmd::Registry { cmd } => registry::run(cmd, out).await?,
+        Cmd::Telemetry { cmd } => telemetry::collector::run(cmd, out).await?,
     }
     Ok(ExitCode::SUCCESS)
 }

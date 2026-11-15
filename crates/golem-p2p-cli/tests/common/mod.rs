@@ -134,8 +134,14 @@ pub struct Cli {
 
 impl Cli {
     pub fn spawn<S: AsRef<str>>(args: &[S]) -> Self {
+        Self::spawn_env(args, &[])
+    }
+
+    /// Like [`Self::spawn`], with extra environment variables.
+    pub fn spawn_env<S: AsRef<str>>(args: &[S], env: &[(&str, &str)]) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_golem-p2p"))
             .args(args.iter().map(|a| a.as_ref()))
+            .envs(env.iter().copied())
             .stdout(Stdio::piped())
             .stderr(if std::env::var_os("RUST_LOG").is_some() {
                 Stdio::inherit()

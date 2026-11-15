@@ -29,6 +29,7 @@ use tracing::debug;
 use crate::{
     observe::SelectedPath,
     out::{Out, ms, path_name},
+    telemetry::ACTIVITY,
 };
 
 /// First bytes of an upload stream.
@@ -82,13 +83,18 @@ pub async fn serve(ep: Endpoint, out: Out, limits: Limits) {
         let slots = slots.clone();
         tokio::spawn(async move {
             let from = inc.from();
-            if let Err(e) = handle(inc, &out, &me, &limits, &slots).await {
-                debug!(%from, "request failed: {e}");
-                out.event("error")
-                    .field("kind", crate::out::anyhow_kind(&e, "request"))
-                    .field("message", format!("request from {from}: {e:#}"))
-                    .field("peer", from.to_string())
-                    .emit();
+            match handle(inc, &out, &me, &limits, &slots).await {
+                Ok(()) => ACTIVITY.request_ok(),
+                Err(e) => {
+                    let kind = crate::out::anyhow_kind(&e, "request");
+                    ACTIVITY.request_failed(kind);
+                    debug!(%from, "request failed: {e}");
+                    out.event("error")
+                        .field("kind", kind)
+                        .field("message", format!("request from {from}: {e:#}"))
+                        .field("peer", from.to_string())
+                        .emit();
+                }
             }
         });
     }

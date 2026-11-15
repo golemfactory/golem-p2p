@@ -716,6 +716,15 @@ waiting out the 5 min clock tolerance). Checked by hand on a live network
 with 60 s certificates and the real tolerance: see
 `comms/2026-11-15-master-testnet-selftest.md`.
 
+**Telemetry.** Members of a closed network can report their health to a
+collector the registry advertises (`telemetry=<url>` in `GET /v1/info`):
+`listen` and `soak` send a small report every 5 s by default, signed by the
+node's identity and carrying its membership certificate, so only members
+can report (checked offline, like peers, by `golem_p2p::telemetry`). No IP
+addresses are sent; `--no-telemetry` opts out. The collector (`golem-p2p
+telemetry serve`) keeps a bounded history and serves a dashboard, JSON and
+Prometheus metrics. Details: [telemetry.md](telemetry.md).
+
 ## 14. Not implemented or not tested yet
 
 * Real NAT traversal across different networks (tests use loopback only).
@@ -734,7 +743,8 @@ with 60 s certificates and the real tolerance: see
 * Datagram and unidirectional streams (disabled: 0 uni streams).
 * Metrics beyond what iroh exports and `Endpoint::stats` (sizes of the
   connection table, connect state, handshakes and queues, and connection and
-  stream counters, used by the soak tests in `harness/soak/`).
+  stream counters, used by the soak tests in `harness/soak/` and by the
+  telemetry reports of closed networks, [telemetry.md](telemetry.md)).
 * Explicit "withdraw" records for identities removed while offline.
 * Address filtering beyond host-internal interfaces: private LAN and VPN
   addresses are published (section 5, question 3 in section 15). Interface

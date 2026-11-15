@@ -1153,6 +1153,7 @@ name = "golem-p2p-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "clap",
  "golem-p2p",
  "hex",
@@ -1160,6 +1161,7 @@ dependencies = [
  "iroh-relay",
  "n0-future",
  "pem 3.0.6",
+ "reqwest",
  "rustls-pki-types",
  "serde",
  "serde_json",

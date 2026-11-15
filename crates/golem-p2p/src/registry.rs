@@ -18,7 +18,7 @@
 //!
 //! | method and path | auth | answer |
 //! |---|---|---|
-//! | `GET /v1/info` | none | `network=..`, `public_key=..`, `cert_lifetime_s=..` lines |
+//! | `GET /v1/info` | none | `network=..`, `public_key=..`, `cert_lifetime_s=..` lines, and `telemetry=<url>` if the network has a telemetry collector |
 //! | `POST /v1/certify` (body: record) | none (the record is the proof) | certificate in hex; `403` not registered |
 //! | `POST /v1/accounts/{name}` | admin | the new account's token; `409` exists |
 //! | `DELETE /v1/accounts/{name}` | admin | `204`; the account's nodes are removed too |
@@ -269,14 +269,34 @@ mod server {
     struct Shared {
         state: Mutex<RegistryState>,
         path: PathBuf,
+        options: ServeOptions,
+    }
+
+    /// Settings of a registry server that are not part of its state.
+    #[derive(Debug, Clone, Default)]
+    pub struct ServeOptions {
+        /// URL of the network's telemetry collector, advertised to nodes in
+        /// `GET /v1/info` as `telemetry=<url>` (see `docs/telemetry.md`).
+        pub telemetry_url: Option<String>,
     }
 
     /// Builds the registry's HTTP routes on the state file at `path`.
     pub fn router(path: PathBuf) -> anyhow_lite::Result<Router> {
+        router_with(path, ServeOptions::default())
+    }
+
+    /// Like [`router`], with options.
+    pub fn router_with(path: PathBuf, options: ServeOptions) -> anyhow_lite::Result<Router> {
+        if let Some(url) = &options.telemetry_url
+            && (url.is_empty() || url.contains(char::is_whitespace))
+        {
+            return Err(anyhow_lite::msg("invalid telemetry URL"));
+        }
         let state = RegistryState::load(&path)?;
         let shared = Arc::new(Shared {
             state: Mutex::new(state),
             path,
+            options,
         });
         Ok(Router::new()
             .route("/v1/info", get(info))
@@ -295,7 +315,16 @@ mod server {
 
     /// Serves the registry on `listener` until the future is dropped.
     pub async fn serve(listener: tokio::net::TcpListener, path: PathBuf) -> std::io::Result<()> {
-        let app = router(path).map_err(|e| std::io::Error::other(e.0))?;
+        serve_with(listener, path, ServeOptions::default()).await
+    }
+
+    /// Like [`serve`], with options.
+    pub async fn serve_with(
+        listener: tokio::net::TcpListener,
+        path: PathBuf,
+        options: ServeOptions,
+    ) -> std::io::Result<()> {
+        let app = router_with(path, options).map_err(|e| std::io::Error::other(e.0))?;
         axum::serve(listener, app).await
     }
 
@@ -343,15 +372,16 @@ mod server {
     async fn info(State(s): State<Arc<Shared>>) -> Response {
         let st = s.state.lock().expect("poisoned");
         let key = st.key().expect("checked").public();
-        text(
-            StatusCode::OK,
-            format!(
-                "network={}\npublic_key={}\ncert_lifetime_s={}\n",
-                st.network,
-                hex::encode(key.as_bytes()),
-                st.cert_lifetime_s
-            ),
-        )
+        let mut body = format!(
+            "network={}\npublic_key={}\ncert_lifetime_s={}\n",
+            st.network,
+            hex::encode(key.as_bytes()),
+            st.cert_lifetime_s
+        );
+        if let Some(url) = &s.options.telemetry_url {
+            body.push_str(&format!("telemetry={url}\n"));
+        }
+        text(StatusCode::OK, body)
     }
 
     async fn certify(State(s): State<Arc<Shared>>, body: Bytes) -> Response {

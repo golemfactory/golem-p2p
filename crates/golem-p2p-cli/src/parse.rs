@@ -81,7 +81,7 @@ pub fn quic_port(s: &str) -> Result<QuicPort, String> {
 }
 
 /// Parses a duration: a number of seconds (`30`, `1.5`) or a number with a
-/// unit `ms`, `s`, `m` or `h` (`250ms`, `30s`, `2m`).
+/// unit `ms`, `s`, `m`, `h` or `d` (`250ms`, `30s`, `2m`, `7d`).
 pub fn duration(s: &str) -> Result<Duration, String> {
     let (num, unit) = split_number(s);
     let factor = match unit {
@@ -89,7 +89,8 @@ pub fn duration(s: &str) -> Result<Duration, String> {
         "ms" => 0.001,
         "m" => 60.0,
         "h" => 3600.0,
-        _ => return Err(format!("invalid duration {s:?} (units: ms, s, m, h)")),
+        "d" => 86_400.0,
+        _ => return Err(format!("invalid duration {s:?} (units: ms, s, m, h, d)")),
     };
     let v: f64 = num.parse().map_err(|_| format!("invalid duration {s:?}"))?;
     Duration::try_from_secs_f64(v * factor).map_err(|_| format!("invalid duration {s:?}"))
@@ -197,6 +198,7 @@ mod tests {
         assert_eq!(duration("250ms"), Ok(Duration::from_millis(250)));
         assert_eq!(duration("2m"), Ok(Duration::from_secs(120)));
         assert_eq!(duration("1h"), Ok(Duration::from_secs(3600)));
+        assert_eq!(duration("7d"), Ok(Duration::from_secs(7 * 86_400)));
         for bad in ["", "s", "-1", "1x", "1.2.3", "inf"] {
             assert!(duration(bad).is_err(), "{bad}");
         }

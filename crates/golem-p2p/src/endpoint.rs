@@ -187,6 +187,10 @@ pub struct EndpointStats {
     pub connections_closed: u64,
     /// Incoming connections refused or failed before or during the handshake.
     pub handshakes_failed: u64,
+    /// Connects to a peer ([`Endpoint::connect`], or a request that needed a
+    /// new connection) that failed: lookup, dial, handshake or refusal.
+    /// Callers that waited for the same failed connect are counted once.
+    pub connects_failed: u64,
     /// Application streams handed to the application ([`Endpoint::accept`]).
     pub streams_accepted: u64,
     /// Application streams reset before reaching the application: invalid
@@ -201,6 +205,7 @@ struct Counters {
     connections_incoming: AtomicU64,
     connections_closed: AtomicU64,
     handshakes_failed: AtomicU64,
+    connects_failed: AtomicU64,
     streams_accepted: AtomicU64,
     streams_refused: AtomicU64,
 }
@@ -970,6 +975,9 @@ impl Inner {
             return Err(e.clone());
         }
         let res = self.lookup_and_dial(to).await;
+        if res.is_err() {
+            Counters::add(&self.counters.connects_failed);
+        }
         slot.failed = res
             .as_ref()
             .err()
@@ -1888,6 +1896,7 @@ impl Endpoint {
             connections_incoming: c.connections_incoming.load(Ordering::Relaxed),
             connections_closed: c.connections_closed.load(Ordering::Relaxed),
             handshakes_failed: c.handshakes_failed.load(Ordering::Relaxed),
+            connects_failed: c.connects_failed.load(Ordering::Relaxed),
             streams_accepted: c.streams_accepted.load(Ordering::Relaxed),
             streams_refused: c.streams_refused.load(Ordering::Relaxed),
         }

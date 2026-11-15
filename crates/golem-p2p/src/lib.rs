@@ -63,6 +63,7 @@ pub mod record;
 pub mod registry;
 pub mod signer;
 pub mod store;
+pub mod telemetry;
 pub mod wire;
 
 pub use iroh;
