@@ -188,18 +188,23 @@ fn too_slow(inc: &mut IncomingStream) -> anyhow::Error {
     ))
 }
 
-/// The start of a request for human output: long requests are cut.
+/// The start of a request for human output: long requests are cut, and
+/// control characters (newlines, terminal escapes) are escaped, so that a
+/// peer cannot forge log lines.
 fn preview(req: &[u8]) -> String {
     const MAX: usize = 100;
-    if req.len() <= MAX {
-        String::from_utf8_lossy(req).into_owned()
-    } else {
-        format!(
-            "{}... ({} bytes)",
-            String::from_utf8_lossy(&req[..MAX]),
-            req.len()
-        )
+    let mut out = String::new();
+    for c in String::from_utf8_lossy(&req[..req.len().min(MAX)]).chars() {
+        if c.is_control() {
+            out.extend(c.escape_default());
+        } else {
+            out.push(c);
+        }
     }
+    if req.len() > MAX {
+        out.push_str(&format!("... ({} bytes)", req.len()));
+    }
+    out
 }
 
 /// Why an upload or download was refused, as sent in the reply.
@@ -449,5 +454,9 @@ mod tests {
         let p = preview(&long);
         assert!(p.ends_with("... (300 bytes)"), "{p}");
         assert_eq!(p.len(), 100 + "... (300 bytes)".len());
+        assert_eq!(
+            preview(b"ok\nINFO forged\x1b[2J"),
+            "ok\\nINFO forged\\u{1b}[2J"
+        );
     }
 }
