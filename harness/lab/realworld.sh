@@ -125,7 +125,10 @@ for r in $(seq "$repeat"); do
         d=$out/run$r-local-$n
         mkdir -p "$d"
         lid=$(local_key local)
-        NO_COLOR=1 timeout -k 5 $((dur + 60)) "$BIN" listen --key "$out/keys/local.key" "${LOCAL_ARGS[@]}" \
+        # Per-request lines ("request from .. via PATH"), counted as
+        # listener_saw, are at debug level in the CLI (as in lab.sh).
+        NO_COLOR=1 RUST_LOG=${GPL_LISTEN_LOG:-warn,golem_p2p=info,golem_p2p::listen=debug} \
+            timeout -k 5 $((dur + 60)) "$BIN" listen --key "$out/keys/local.key" "${LOCAL_ARGS[@]}" \
             >"$d/listen.log" 2>&1 </dev/null &
         lpid=$!
         LOCAL_PIDS+=("$lpid")

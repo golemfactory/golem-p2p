@@ -128,7 +128,10 @@ listener=sym1 sender=easy1 ok=1 replies=721 t_first=0.92 first_ms=298 first_path
 `t_first`/`t_direct` count from the start of the `send` process (bind waits
 for the relay, up to 5 s), `first_ms` is the first request as printed by
 `send` (directory lookup, connect, handshake, one request). Field meanings are
-in `tools/summarize.py`.
+in `tools/summarize.py`. `listener_saw` counts the listener's per-request log
+lines, which the CLI writes at debug level only, so `lab.sh` and
+`realworld.sh` start listeners without `--json` with
+`RUST_LOG=warn,golem_p2p=info,golem_p2p::listen=debug` (`GPL_LISTEN_LOG`).
 
 The `bench` commands use the CLI's `--json` events instead
 ([docs/cli-events.md](../docs/cli-events.md)); `--run-id` and the node name

@@ -855,11 +855,19 @@ parse_run_opts() {
 
 # start_listener <node> <tag> <args...>: spawns `golem-p2p listen`, waits for
 # its READY line and sets READY to it.
+#
+# A listener without --json logs one line per request ("request from .. via
+# PATH: .."), which tools/summarize.py counts (listener_saw). The CLI writes
+# these lines at debug level only (since 9e7afee), so such listeners get
+# RUST_LOG=$LISTEN_LOG; JSON listeners report every request as an event.
+LISTEN_LOG=${GPL_LISTEN_LOG:-warn,golem_p2p=info,golem_p2p::listen=debug}
 start_listener() {
     local node=$1 tag=$2
     shift 2
     ensure_key "$node" >/dev/null
-    spawn_in "$PFX-$node" "$tag" "$node" "$GOLEM_P2P" listen --key "$STATE/keys/$node.key" "$@" >/dev/null
+    local logenv=(env "RUST_LOG=$LISTEN_LOG")
+    [[ " $* " == *" --json "* ]] && logenv=()
+    spawn_in "$PFX-$node" "$tag" "$node" "${logenv[@]}" "$GOLEM_P2P" listen --key "$STATE/keys/$node.key" "$@" >/dev/null
     local n
     READY=""
     for n in $(seq 200); do
