@@ -13,6 +13,8 @@
 //!   published a newer record without it (for example after switching the
 //!   default identity or removing an alias). Withdrawn identities do not
 //!   resolve, even though their older record is still signed and unexpired.
+//!   When the newer record leaves the store (evicted or expired), the
+//!   withdrawn identities' entries go with it, so they cannot resolve again.
 //! * The number of stored entries is bounded. When full, expired entries are
 //!   dropped first, then the entries that expire soonest (1 % of the capacity
 //!   at once, so that a full store does not scan all entries on every
@@ -83,26 +85,63 @@ fn compare(existing: Option<&VerifiedRecord>, rec: &VerifiedRecord) -> Slot {
 /// Makes room for one more entry: drops expired entries, then the entries
 /// that expire soonest. When it has to evict, it evicts 1 % of the capacity
 /// more than needed, so that one pass over the map (O(n)) makes room for many
-/// inserts instead of one.
+/// inserts instead of one. Returns the removed records.
 fn make_room<K: Eq + Hash + Copy>(
     map: &mut HashMap<K, VerifiedRecord>,
     capacity: usize,
     now: SystemTime,
-) {
+) -> Vec<VerifiedRecord> {
+    let mut removed = Vec::new();
     if map.len() < capacity {
-        return;
+        return removed;
     }
-    map.retain(|_, r| !r.is_expired_at(now));
+    remove_expired(map, now, &mut removed);
     if map.len() < capacity {
-        return;
+        return removed;
     }
     let mut by_expiry: Vec<(SystemTime, K)> =
         map.iter().map(|(k, r)| (r.expires_at(), *k)).collect();
     let evict = (map.len() - capacity + 1 + capacity / 100).min(by_expiry.len());
     by_expiry.select_nth_unstable_by_key(evict - 1, |(t, _)| *t);
-    for (_, k) in &by_expiry[..evict] {
-        map.remove(k);
+    removed.extend(by_expiry[..evict].iter().filter_map(|(_, k)| map.remove(k)));
+    removed
+}
+
+fn remove_expired<K>(
+    map: &mut HashMap<K, VerifiedRecord>,
+    now: SystemTime,
+    removed: &mut Vec<VerifiedRecord>,
+) {
+    map.retain(|_, r| {
+        let expired = r.is_expired_at(now);
+        if expired {
+            removed.push(r.clone());
+        }
+        !expired
+    });
+}
+
+/// Returns `true` if `latest`, the newest record of `rec`'s endpoint,
+/// withdraws `id` from the older `rec`.
+fn withdraws(latest: &VerifiedRecord, rec: &VerifiedRecord, id: &NodeId) -> bool {
+    latest.endpoint_id() == rec.endpoint_id() && latest.seq() > rec.seq() && !latest.contains(id)
+}
+
+/// Endpoint records that leave the endpoint index (evicted or expired) take
+/// the identities they withdrew with them: without the newer record,
+/// `resolve` could not tell that the older record's identity was withdrawn,
+/// and it would resolve again.
+fn drop_withdrawn(by_id: &mut HashMap<NodeId, VerifiedRecord>, left: &[VerifiedRecord]) {
+    if left.is_empty() {
+        return;
     }
+    let left: HashMap<EndpointId, &VerifiedRecord> =
+        left.iter().map(|r| (r.endpoint_id(), r)).collect();
+    by_id.retain(|id, rec| {
+        !left
+            .get(&rec.endpoint_id())
+            .is_some_and(|latest| withdraws(latest, rec, id))
+    });
 }
 
 impl RecordStore {
@@ -132,7 +171,8 @@ impl RecordStore {
         let ep = rec.endpoint_id();
         match compare(inner.by_endpoint.get(&ep), rec) {
             Slot::New => {
-                make_room(&mut inner.by_endpoint, self.capacity, now);
+                let left = make_room(&mut inner.by_endpoint, self.capacity, now);
+                drop_withdrawn(&mut inner.by_id, &left);
                 inner.by_endpoint.insert(ep, rec.clone());
                 updated = true;
             }
@@ -181,8 +221,7 @@ impl RecordStore {
             return None;
         }
         if let Some(latest) = inner.by_endpoint.get(&rec.endpoint_id())
-            && latest.seq() > rec.seq()
-            && !latest.contains(id)
+            && withdraws(latest, rec, id)
         {
             return None;
         }
@@ -203,8 +242,10 @@ impl RecordStore {
     pub fn prune(&self) {
         let now = SystemTime::now();
         let mut inner = self.inner.lock().expect("poisoned");
+        let mut left = Vec::new();
+        remove_expired(&mut inner.by_endpoint, now, &mut left);
+        drop_withdrawn(&mut inner.by_id, &left);
         inner.by_id.retain(|_, r| !r.is_expired_at(now));
-        inner.by_endpoint.retain(|_, r| !r.is_expired_at(now));
     }
 
     /// Returns the number of identities and endpoints stored.
@@ -369,6 +410,32 @@ mod tests {
         store.insert(&r1);
         assert!(store.resolve(&a).is_none());
         assert_eq!(store.resolve(&b), Some(r2));
+    }
+
+    #[tokio::test]
+    async fn evicting_the_withdrawing_record_keeps_the_identity_withdrawn() {
+        // The endpoint's newest record is what marks `a` as withdrawn. When
+        // other records push it out of the endpoint index, the old record
+        // listing `a` must not resolve again (here it would for 50 minutes).
+        let s = InMemorySigner::new();
+        let (a, b) = (s.generate(), s.generate());
+        let mut n = Node::new(&s);
+        let r1 = n.record(&[a], 3000).await;
+        let r2 = n.record(&[b], 600).await;
+        let store = RecordStore::new(8);
+        store.insert(&r1);
+        store.insert(&r2);
+        assert!(store.resolve(&a).is_none());
+        for _ in 0..8 {
+            let id = s.generate();
+            let mut other = Node::new(&s);
+            store.insert(&other.record(&[id], 1800).await);
+        }
+        assert!(
+            store.by_endpoint(&n.key.public()).is_none(),
+            "r2 was not evicted"
+        );
+        assert!(store.resolve(&a).is_none());
     }
 
     #[tokio::test]

@@ -341,7 +341,9 @@ dial every address it lists.
 * An identity is **withdrawn** when the endpoint that last listed it publishes
   a newer record without it (default switch, alias removal). Withdrawn
   identities do not resolve, although their older record is still validly
-  signed.
+  signed. When the newer record leaves the store (evicted or expired), the
+  withdrawn identities' entries are dropped with it; otherwise they would
+  resolve again.
 * Nothing pins an identity to an endpoint. A newer record for the same
   identity always replaces the previous binding, which is how restarts with a
   new endpoint key and default switches propagate.
