@@ -1,0 +1,61 @@
+# cargo-deny policy, checked by .github/workflows/security.yml (all four
+# checks block). See docs/security-checks.md. Every ignore or exception names
+# the advisory or crate and says why.
+
+[graph]
+# Check what any feature combination of the workspace can pull in.
+all-features = true
+
+[advisories]
+# Vulnerabilities fail. So do unmaintained and unsound crates, anywhere in
+# the tree, and yanked versions in Cargo.lock: each needs an update or an
+# entry here.
+unmaintained = "all"
+unsound = "all"
+yanked = "deny"
+ignore = [
+    { id = "RUSTSEC-2024-0436", reason = "paste (unmaintained, no successor release) is a compile-time proc-macro of netlink-packet-core 0.8, which iroh 1.4.1 uses through netwatch; nothing of it runs at run time. Drop this once iroh moves off netlink-packet-core 0.8." },
+]
+
+[licenses]
+# Permissive licenses only. Workspace crates are unpublished and unlicensed.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+exceptions = [
+    # Mozilla's root certificate list, as data.
+    { allow = ["CDLA-Permissive-2.0"], crate = "webpki-roots" },
+    { allow = ["CDLA-Permissive-2.0"], crate = "webpki-root-certs" },
+]
+
+[licenses.private]
+ignore = true
+
+[bans]
+# Duplicate versions are reported, not refused: most come from iroh's tree.
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+    { crate = "portmapper", reason = "golem-p2p does not map ports on the user's router (UPnP, PCP, NAT-PMP); see docs/design.md, section 9, and the iroh entry in Cargo.toml" },
+    { crate = "openssl-sys", reason = "TLS is rustls with ring; no system OpenSSL" },
+]
+
+[sources]
+# crates.io only: no git dependencies, no other registries.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

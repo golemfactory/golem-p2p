@@ -1,0 +1,195 @@
+name: Security checks
+
+# Deterministic checks with pinned tools; no API keys, read-only token. The
+# weekly run catches new advisories for unchanged code. What each check
+# covers and which ones fail the run: docs/security-checks.md. The Haiku scan
+# (security-scan.yml) calls this workflow and puts the results (artifacts
+# security-checks-*) into its report.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  # github.workflow is the caller's name when called, so calls get their own group.
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: never
+  NO_COLOR: "1"
+  RUST_TOOLCHAIN: "1.96.0"
+
+jobs:
+  rust-deps:
+    name: Rust dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust and tools
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+          harness/security-tools.sh "$RUNNER_TEMP/bin" cargo-deny cargo-audit
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          echo "SECURITY_CHECK_RESULTS=$RUNNER_TEMP/security-checks-$GITHUB_JOB.jsonl" >> "$GITHUB_ENV"
+      - name: cargo deny (advisories, bans, licenses, sources)
+        run: >-
+          harness/security-check.sh "cargo deny" --
+          cargo deny --locked --color never check --hide-inclusion-graph
+      - name: cargo audit (RustSec vulnerabilities)
+        if: ${{ !cancelled() }}
+        run: >-
+          harness/security-check.sh "cargo audit" --
+          cargo audit --color never
+
+      - name: Keep results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: security-checks-${{ github.job }}
+          path: ${{ runner.temp }}/security-checks-${{ github.job }}.jsonl
+          if-no-files-found: warn
+          retention-days: 14
+
+  workflows:
+    name: GitHub Actions workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install tools
+        run: |
+          harness/security-tools.sh "$RUNNER_TEMP/bin" zizmor actionlint shellcheck
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          echo "SECURITY_CHECK_RESULTS=$RUNNER_TEMP/security-checks-$GITHUB_JOB.jsonl" >> "$GITHUB_ENV"
+      - name: zizmor (workflow security)
+        env:
+          # Online audits: impostor commits, known-vulnerable actions.
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          harness/security-check.sh "zizmor" --
+          zizmor --persona pedantic --format plain --color never .github/workflows
+      - name: zizmor auditor persona (informational)
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          harness/security-check.sh --informational "zizmor (auditor persona)" --
+          zizmor --persona auditor --format plain --color never .github/workflows
+      - name: actionlint (workflow syntax, expressions, shellcheck)
+        if: ${{ !cancelled() }}
+        run: >-
+          harness/security-check.sh "actionlint" --
+          actionlint -no-color
+
+      - name: Keep results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: security-checks-${{ github.job }}
+          path: ${{ runner.temp }}/security-checks-${{ github.job }}.jsonl
+          if-no-files-found: warn
+          retention-days: 14
+
+  secrets:
+    name: Secrets in git history
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks
+        run: |
+          harness/security-tools.sh "$RUNNER_TEMP/bin" gitleaks
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          echo "SECURITY_CHECK_RESULTS=$RUNNER_TEMP/security-checks-$GITHUB_JOB.jsonl" >> "$GITHUB_ENV"
+      - name: gitleaks (all commits of all branches, redacted)
+        run: >-
+          harness/security-check.sh "gitleaks" --
+          gitleaks git --config .gitleaks.toml --log-opts=--all
+          --redact --no-banner --no-color --exit-code 1 .
+
+      - name: Keep results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: security-checks-${{ github.job }}
+          path: ${{ runner.temp }}/security-checks-${{ github.job }}.jsonl
+          if-no-files-found: warn
+          retention-days: 14
+
+  python-deps:
+    name: Python dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.12"
+      - name: Install pip-audit
+        run: |
+          python -m pip install --disable-pip-version-check pip-audit==2.10.1
+          echo "SECURITY_CHECK_RESULTS=$RUNNER_TEMP/security-checks-$GITHUB_JOB.jsonl" >> "$GITHUB_ENV"
+      - name: pip-audit (harness/security-scan-requirements.txt)
+        # The audited packages are not installed: every pin has hashes.
+        run: >-
+          harness/security-check.sh "pip-audit" --
+          pip-audit --strict --progress-spinner off --disable-pip --require-hashes
+          -r harness/security-scan-requirements.txt
+
+      - name: Keep results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: security-checks-${{ github.job }}
+          path: ${{ runner.temp }}/security-checks-${{ github.job }}.jsonl
+          if-no-files-found: warn
+          retention-days: 14
+
+  summary:
+    name: Summary
+    needs: [rust-deps, workflows, secrets, python-deps]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Results table
+        env:
+          RUST_DEPS: ${{ needs.rust-deps.result }}
+          WORKFLOWS: ${{ needs.workflows.result }}
+          SECRETS: ${{ needs.secrets.result }}
+          PYTHON_DEPS: ${{ needs.python-deps.result }}
+        run: |
+          {
+            echo "## Security checks"
+            echo
+            echo "| Job | Checks | Result |"
+            echo "| --- | --- | --- |"
+            echo "| Rust dependencies | cargo deny (advisories incl. unmaintained, unsound, yanked; bans; licenses; sources), cargo audit | $RUST_DEPS |"
+            echo "| GitHub Actions workflows | zizmor, actionlint with shellcheck | $WORKFLOWS |"
+            echo "| Secrets in git history | gitleaks over all commits | $SECRETS |"
+            echo "| Python dependencies | pip-audit of the security scan requirements | $PYTHON_DEPS |"
+            echo
+            echo "Every check fails its job on a finding, except the informational zizmor auditor persona. Ignores live in deny.toml and .gitleaks.toml, each with a reason. The job summaries below show the tool output. See docs/security-checks.md."
+          } >> "$GITHUB_STEP_SUMMARY"
+          for result in "$RUST_DEPS" "$WORKFLOWS" "$SECRETS" "$PYTHON_DEPS"; do
+            [ "$result" = success ] || exit 1
+          done

@@ -1,0 +1,18 @@
+# gitleaks configuration for .github/workflows/security.yml: the default
+# rules plus the secret files of a golem-p2p deployment, which hold bare hex
+# that content rules cannot tell from a hash. None of these may ever be
+# committed: node keys (`golem-p2p keygen`), registry state and tokens.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "golem-p2p-secret-file"
+description = "golem-p2p node key, registry state or token file, or an .env file"
+path = '''(^|/)(\.env(\.[^/]*)?|registry\.json|[^/]*\.(key|token))$'''
+
+[[rules]]
+id = "golem-p2p-registry-secret-key"
+description = "Registry signing key in registry state"
+regex = '''"secret_key"\s*:\s*"([0-9a-fA-F]{64})"'''
+secretGroup = 1
+keywords = ["secret_key"]

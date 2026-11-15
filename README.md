@@ -42,12 +42,13 @@ design, the decisions taken, and the open questions.
 ## Layout
 
 ```
-crates/golem-p2p       core library
-crates/golem-p2p-cli   `golem-p2p` command line tool (directory, registry, listen, send, probe, bench, soak)
-docs/design.md         design document
-docs/cli-events.md     JSON events of the CLI (`--json`), for test harnesses
-harness/               NAT lab, benchmark campaigns, soak tests and their results
-nodes/                 shared notes of the test machines, and the push rules (nodes/README.md)
+crates/golem-p2p        core library
+crates/golem-p2p-cli    `golem-p2p` command line tool (directory, registry, listen, send, probe, bench, soak)
+docs/design.md          design document
+docs/cli-events.md      JSON events of the CLI (`--json`), for test harnesses
+docs/security-checks.md security checks in CI (dependencies, workflows, secrets) and how to run them
+harness/                NAT lab, benchmark campaigns, soak tests and their results
+nodes/                  shared notes of the test machines, and the push rules (nodes/README.md)
 ```
 
 ## Build and test
@@ -61,6 +62,12 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo fmt --all --check
 ```
 
+CI (`.github/workflows/ci.yml`) runs these with Rust 1.96.0, plus `cargo check`
+with the minimum version. `.github/workflows/security.yml` checks the
+dependencies (RustSec advisories, licenses, sources), the workflows and the
+git history for secrets, on every push and weekly; see
+[docs/security-checks.md](docs/security-checks.md).
+
 The tests start local iroh relay servers (with self-signed certificates), HTTP
 directories and nodes on `127.0.0.1` with OS-assigned ports. They need no
 network access. The crash test runs the CLI as a child process and kills it
@@ -72,7 +79,7 @@ What the tests cover:
 |---|---|
 | `connectivity.rs` | direct connection; relay-only connection (no UDP, path checked); relay-assisted connection becoming direct; two relays with each node homed on a different one (via HTTP directory); a relay going down while another stays up; concurrent requests to a new peer share one lookup and one dial, and to a dead peer fail together after one connect timeout; the request timeout covers waiting for a stream when the peer keeps all its streams busy; a request whose handler is too slow times out alone (its stream is reset with `TIMED_OUT`, concurrent requests succeed, the connection stays open); a peer that hangs is noticed within one request timeout (connection closed, redialed once it recovers); a request cancelled while it is being sent reaches the handler as a reset (`CANCELLED`), never truncated, and so does one dropped after it was written completely but before it was delivered; a request dropped while waiting for its response makes the handler's `respond` fail with `CANCELLED`; an address change while `bind` publishes the first record is not lost; `max_response_size`; a request the handler drops unanswered fails with `NOT_ANSWERED` |
 | `identity_changes.rs` | default switch with and without restart; A to B to A with and without restart; alias added and removed at runtime; locked key blocks updates; restart with a persisted endpoint key; a failed re-sign (locked key) and a failed publish (directory down) are retried |
-| `security.rs` | forged record from a directory; stale record replay; record listing an identity that did not sign it; valid record presented over another endpoint's connection (both directions); spoofed stream sender and receiver; new instance superseding a live old connection; duplicate record updates paced |
+| `security.rs` | forged record from a directory; stale record replay; record listing an identity that did not sign it; valid record presented over another endpoint's connection (both directions); spoofed stream sender and receiver; new instance superseding a live old connection; duplicate record updates paced; a record with an expiry at the end of the `u64` range refused cleanly in a handshake, by a directory and from a directory |
 | `encryption.rs` | peers offering another ALPN refused in the TLS handshake; a relay (plain HTTP behind a recording TLS-terminating proxy) sees endpoint IDs but neither a plaintext marker nor the Ethereum identities; non-https relay URLs rejected by the builder; a signed record with an `http://` relay refused and never dialed |
 | `closed_network.rs` | registry over HTTP: registered members connect both ways; an outsider gets no certificate, and without one is refused by members (`NotMember`) and ignored in lookups; accounts: admin-only creation, no takeover or removal of another account's node, removing an account removes its nodes, certification follows registrations; a new alias needs registration first; offline certificate checks (untrusted key, key rotation, other network, other endpoint, expiry with clock tolerance, too long a lifetime, tampering) |
 | `soak.rs` | many short-lived clients against one server, and one client against many short-lived servers: the connection table, connect slots, dial locks, handshakes and queued streams return to idle (`Endpoint::stats`); failed connects (unknown and dead peers) leave nothing behind. Ignored by default, minutes each (`--ignored`, `GOLEM_P2P_SOAK_CYCLES`, `GOLEM_P2P_SOAK_MINUTES`): thousands of sessions direct and through a relay, many small and large requests on one connection, idle nodes with and without QUIC address discovery, checking that tasks, file descriptors and the heap in use do not grow with sessions, requests or time |

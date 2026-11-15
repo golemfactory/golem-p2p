@@ -1,1 +1,9 @@
 /target
+__pycache__/
+# Secrets of a deployment never belong here (also checked by gitleaks, see
+# .gitleaks.toml): node keys, registry state and tokens, .env files.
+*.key
+*.token
+registry.json
+.env
+.env.*
