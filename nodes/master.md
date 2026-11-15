@@ -19,7 +19,16 @@ script runs on), against the lab on puppet.
 
 The domain `arkiv-global.net` (OVH) expires on 2026-11-18 unless it is renewed.
 
-Host firewall: none (INPUT policy ACCEPT, only Docker's forwarding rules).
+Host firewall: ufw, active since 2026-11-15 (the host had none after the
+2026-11-11 reinstall). Incoming is denied by default, outgoing allowed, and
+only these are open: tcp 22 (ssh), tcp 80 and 443 (nginx), udp 8000 (the
+harness's "open" listener port) and udp 56090 (reflector). Every other UDP
+port drops unsolicited packets, so a golem-p2p node here on a random port is
+a firewalled node: direct paths need hole punching, as in the `*-ufw`
+scenarios of campaigns 1-4. Checked from p2p-relay1 after enabling: ssh and
+https reachable, other ports blocked; `probe` from master to puppet's testnet
+node went direct (30/30, 34 ms). Docker's published ports are on 127.0.0.1
+only, and container egress still works.
 Whether the provider (Hetzner) filters in front of the host is not known yet:
 it can only be tested from outside (see `comms/2026-11-14-master-to-puppet-realworld.md`).
 
@@ -29,7 +38,7 @@ tests master uses **56000-56099** tcp and udp, the same range as puppet:
 | port | use | state |
 |---|---|---|
 | udp 56090 | reflector (`harness/lab/tools/reflector.py`) for `realworld.sh --natcheck --natcheck-local-port 56090` and puppet's reachability check | up, systemd `gpl-master-reflector`, stops by itself on 2026-11-21 |
-| other 56000-56099 | listeners, a second relay later | free |
+| other 56000-56099 | listeners, a second relay later | free; closed in ufw (open one with `sudo ufw allow <port>/udp` when a test needs it reachable) |
 
 ## Access to puppet
 

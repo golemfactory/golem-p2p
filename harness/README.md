@@ -437,9 +437,11 @@ the move from iroh 1.4.1 to 1.5.0 from the golemfactory/iroh fork. Its
 also records the lab relay's and the real relay's `iroh-relay` versions. The
 CLI and library changed between campaigns 4 and 5 too (closed networks,
 security fixes), and the build machine was reinstalled on 2026-11-11 and
-has had no host firewall since (ufw inactive), so the scenarios named `*-ufw`
-(a random UDP port that ufw used to drop) now run on an open port; see the
-campaign's `notes.json`.
+had no host firewall from then until 2026-11-15 (ufw inactive), so in
+campaign 5 the scenarios named `*-ufw` (a random UDP port that ufw drops)
+ran on an open port; see the campaign's `notes.json`. ufw is active again
+since 2026-11-15 (`nodes/master.md`), so later campaigns test the `*-ufw`
+scenarios as campaigns 1-4 did.
 
 ## Soak tests
 
