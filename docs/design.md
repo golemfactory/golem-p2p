@@ -10,7 +10,13 @@ with peer-to-peer connections built on [iroh](https://iroh.computer).
 
 Requirements:
 
-1. iroh (1.4.1) is the transport: QUIC, hole punching, relays.
+1. iroh (1.5.0) is the transport: QUIC, hole punching, relays. Until a
+   release on crates.io has equivalent relay recovery fixes, iroh comes from
+   the golemfactory/iroh fork (rev `4ad24ac2`, branch `relay-recovery`:
+   upstream main plus bounded relay actor waits and recovery of stalled relay
+   tasks, upstream draft PR n0-computer/iroh#4686), pinned in the workspace
+   `[patch.crates-io]`. Wire protocol and records are unchanged from iroh
+   1.4.1: 1.4.1 and 1.5.0 nodes and relays work together.
 2. Node identities are the same as in yagna. An identity is a secp256k1 key,
    and the node ID is its 20-byte Ethereum address. A node has one default
    identity and may have aliases (secondary identities).
@@ -101,7 +107,7 @@ QUIC with TLS 1.3. There is no option to turn it off, no plaintext mode, and
 no second encryption layer on top. This holds for direct and relayed
 connections alike.
 
-What this gives (iroh 1.4 with the `tls-ring` crypto provider):
+What this gives (iroh 1.5 with the `tls-ring` crypto provider):
 
 * **Key exchange.** Every connection runs a TLS 1.3 handshake with ephemeral
   ECDHE (X25519). Traffic keys come from that exchange; the long-term endpoint
@@ -320,11 +326,11 @@ what the directory stores. After a connection is up (also over a relay),
 iroh runs QUIC NAT traversal: it sends all its local direct addresses
 (including Docker bridges and VPN addresses, up to 32) to the peer inside the
 encrypted connection, and both sides probe them while hole punching.
-golem-p2p cannot filter these without patching iroh (iroh 1.4.1 has no hook;
-`iroh::endpoint::Builder::addr_filter` only applies to iroh's own address
-lookup publishing, which golem-p2p does not use). They go only to
-authenticated peers, never to a directory, and TLS makes a wrong target
-harmless.
+golem-p2p cannot filter these without patching iroh (iroh 1.5.0 still has no
+hook, as 1.4.1 had none; `iroh::endpoint::Builder::addr_filter` only applies
+to iroh's own address lookup publishing, which golem-p2p does not use). They
+go only to authenticated peers, never to a directory, and TLS makes a wrong
+target harmless.
 
 **Older nodes.** This is publishing policy, not a verification rule. A record
 that lists Docker addresses (within the bounds) still verifies, and peers

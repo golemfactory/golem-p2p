@@ -4,7 +4,7 @@ Peer-to-peer communication between [yagna](https://github.com/golemfactory/yagna
 nodes, built on [iroh](https://iroh.computer). It is meant to replace the
 relay-based networking in yagna (`ya-relay`).
 
-* **Transport:** iroh 1.4 (QUIC, TLS 1.3, hole punching, relays). Direct
+* **Transport:** iroh 1.5 (QUIC, TLS 1.3, hole punching, relays). Direct
   connections where possible, relayed otherwise, with any number of relays.
   No port mapping: golem-p2p never asks the router to open ports (UPnP, PCP,
   NAT-PMP).
@@ -94,8 +94,9 @@ What the tests cover:
 
 You need a relay and a directory both machines can reach. Relays must use
 `https`, so iroh-relay's plain-HTTP `--dev` mode does not work. Any iroh 1.4
-relay with a TLS certificate does. With a publicly trusted certificate (for
-example iroh-relay's `cert_mode = "LetsEncrypt"`), leave out `--relay-ca`.
+or 1.5 relay with a TLS certificate does. With a publicly trusted certificate
+(for example iroh-relay's `cert_mode = "LetsEncrypt"`), leave out
+`--relay-ca`.
 With a self-signed certificate for the relay's IP address:
 
 ```sh
@@ -115,7 +116,13 @@ cert_mode = "Manual"
 manual_cert_path = "relay.crt"
 manual_key_path = "relay.key"
 END
+# The relay: either iroh-relay 1.4.1 from crates.io (what puppet's relays run)
 cargo install iroh-relay --version 1.4.1 --features server
+# or 1.5.0 from the golemfactory/iroh fork, the revision golem-p2p builds on
+# (relay server changes since 1.4.1: handshake timeouts, URL path prefixes).
+# Either works with golem-p2p's iroh 1.5.0 nodes.
+# cargo install --git https://github.com/golemfactory/iroh \
+#     --rev 4ad24ac2761e97fe57791d8d898fd608b78ca0d5 iroh-relay --features server
 iroh-relay --config-path relay.toml
 
 # A directory (plain HTTP for now; TLS comes before production):

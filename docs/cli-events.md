@@ -479,8 +479,8 @@ exits on its own after `D`.
 
 ## How paths are observed
 
-iroh 1.4 reports every change of a connection's open paths and of its
-selected path on `Connection::path_events`. For every connection (found via
+iroh (1.4 and 1.5) reports every change of a connection's open paths and of
+its selected path on `Connection::path_events`. For every connection (found via
 the endpoint's `Connected` events), the CLI subscribes to that stream, and on
 each event re-reads the path snapshot (`Connection::paths`) and compares the
 selected path (kind and remote address) with the previous one. This is event
