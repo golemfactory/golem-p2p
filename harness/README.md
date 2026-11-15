@@ -23,6 +23,7 @@ campaign/campaign1.sh    benchmark campaign 1 (lab matrix, real world, relay, st
 campaign/campaign2.sh    campaign 2: the same scenarios after the bench/timeout fixes
 campaign/campaign3.sh    campaign 3: the same scenarios after the loss/relay-fallback/sizing fixes
 campaign/campaign4.sh    campaign 4: the same scenarios after the upload-count/concurrency fixes
+campaign/campaign5.sh    campaign 5: the same scenarios on iroh 1.5.0 (golemfactory/iroh fork)
 campaign/summarize.py    campaign directory -> summary.json + table.md (all bench formats)
 campaign/compare.py      two campaign directories -> compare.json + compare.md;
                          --series: several -> compare<N>.json + compare<N>.md
@@ -54,7 +55,10 @@ its comparison with campaign 3 (`compare.md`) and campaigns 1-4 side by side
   loaded after `down`; with no rules left in the root namespace they do
   nothing.
 * Binaries: `golem-p2p` (built on the build machine, glibc ≥ 2.34) and
-  `iroh-relay` 1.4.1 (copied from the relay VM or given with `IROH_RELAY_BIN`).
+  `iroh-relay` for the lab's own relay: copied from the relay VM (1.4.1) if
+  the lab has none, or given with `IROH_RELAY_BIN` (since 2026-11-15 the lab
+  runs 1.5.0 from the golemfactory/iroh fork rev `4ad24ac2`, the rev
+  golem-p2p builds on; see the main README for building it).
 
 ## Deploy
 
@@ -63,12 +67,18 @@ On the build machine (here: the Hetzner server, with `~/.ssh/p2p/ssh_config`):
 ```sh
 harness/lab/deploy.sh                 # cargo build --release -p golem-p2p-cli, then copy
 GPL_SKIP_BUILD=1 harness/lab/deploy.sh   # copy only
+IROH_RELAY_BIN=path/to/iroh-relay harness/lab/deploy.sh   # also set the lab's relay
 ```
 
 It copies `lab.sh`, `tools/`, `topologies/` to `~/golem-p2p-lab` on
-`p2p-natlab`, the CLI to `bin/golem-p2p`, `iroh-relay` from `p2p-relay1` to
-`bin/iroh-relay` (once), the real relay's certificate to
-`certs/real-relay.crt`, and writes the deployed commit to `DEPLOYED`.
+`p2p-natlab`, the CLI to `bin/golem-p2p` (if its sha256 differs), the lab
+relay's `iroh-relay` to `bin/iroh-relay`, the real relay's certificate to
+`certs/real-relay.crt`, and writes the deployed commit, the time and the lab
+relay's version and sha256 to `DEPLOYED` (one line; `lab.sh` copies it into
+every run's `meta.json`). The relay binary comes from `IROH_RELAY_BIN` when
+given (replacing the VM's when the checksums differ), otherwise from
+`p2p-relay1` only if the VM has none, so a relay set once stays until the
+next deploy with another `IROH_RELAY_BIN`.
 Don't deploy while a lab command runs: bash reads scripts while executing them.
 
 ## Run
@@ -413,19 +423,36 @@ samples this machine's load average every 10 s while the `realworld`,
 `startup` and `relay` steps run (`DIR/hetzner-load.txt`), since other work on
 the build machine can shift the numbers measured there.
 
+`campaign/campaign5.sh` is `campaign4.sh` with the same scenarios, arguments,
+run counts and checks (default output `results/<date>-campaign5`), compared
+with campaign 4 (`compare.md`) and over campaigns 1-5 (`compare5.md`), for
+the move from iroh 1.4.1 to 1.5.0 from the golemfactory/iroh fork. Its
+`deploy` step passes `IROH_RELAY_BIN` to `lab/deploy.sh`, and `versions.txt`
+also records the lab relay's and the real relay's `iroh-relay` versions. The
+CLI and library changed between campaigns 4 and 5 too (closed networks,
+security fixes), and the build machine was reinstalled on 2026-11-11 and
+has had no host firewall since (ufw inactive), so the scenarios named `*-ufw`
+(a random UDP port that ufw used to drop) now run on an open port; see the
+campaign's `notes.json`.
+
 ## Soak tests
 
 `soak/soak.sh` runs many clients against one listener for hours and samples
 the resources of every process, to find leaks, unbounded growth, slowdowns
 and failures under churn in the library, the CLI's listener and directory,
-and the iroh relay. It needs only the CLI binary, `iroh-relay` 1.4.1 (for a
-local relay), `python3`, `openssl` and `curl`; no root. Results of the first
+and the iroh relay. It needs only the CLI binary, `iroh-relay` (for a
+local relay: 1.4.1 from crates.io, as in the soaks so far, or 1.5.0 from the
+golemfactory/iroh fork, see the main README), `python3`, `openssl` and
+`curl`; no root. Results of the first
 soak (local, 2.5 h runs, findings in `notes.md`):
 [results/2026-11-08-soak-local/](results/2026-11-08-soak-local/).
 
 ```sh
 cargo build --release -p golem-p2p-cli
 cargo install iroh-relay --version 1.4.1 --features server --root target/soak-tools
+# or the relay of the iroh rev golem-p2p builds on (1.5.0, golemfactory/iroh fork):
+# cargo install --git https://github.com/golemfactory/iroh \
+#     --rev 4ad24ac2761e97fe57791d8d898fd608b78ca0d5 iroh-relay --features server --root target/soak-tools
 harness/soak/soak.sh run steady --out /tmp/soak-steady --duration 2h --clients 100
 harness/soak/soak.sh run relay  --out /tmp/soak-relay  --duration 2h --clients 50
 harness/soak/soak.sh run churn  --out /tmp/soak-churn  --duration 2h --workers 6 --session 3s
