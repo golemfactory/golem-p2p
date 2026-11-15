@@ -137,7 +137,7 @@ the host, its relays, `p2p-hostnat` or the VMs was changed.
 | | |
 |---|---|
 | service | systemd `golem-p2p-testnet-listen` on the host (not in a VM): `golem-p2p listen` (echo and bulk) in network `golem-testnet`, relay `https://puppet.golemp2p.arkiv-global.net:56002,quic=56003`, hardened unit (`ProtectSystem=strict`, `ProtectHome=read-only`, no capabilities) |
-| binary | `/usr/local/bin/golem-p2p`, built on master from `f25db17` |
+| binary | `/usr/local/bin/golem-p2p`, built on master from `577df97` |
 | node ID | `0x03b31e0e661ef73f64c8710b8486518198e81c18` (key `~/golem-p2p-testnet/listen.key`, mode 0600) |
 | account | `puppet`; token in `~/golem-p2p-testnet/puppet.token` (mode 0600, directory 0700). Registered: the listener and `0xdf54c6809fa776a3a0d11668d61ccd4330fddf76` (`client.key`, for `send` tests) |
 | outsider | `~/golem-p2p-testnet/outsider.key` (`0x0fc81f1d…`), deliberately not registered, for refusal tests |
