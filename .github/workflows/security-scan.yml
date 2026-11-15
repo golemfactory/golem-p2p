@@ -21,6 +21,9 @@ jobs:
   scan:
     name: Scan and render report
     runs-on: ubuntu-latest
+    # The API key belongs in this environment's secrets, where an admin can
+    # limit it to main and add reviewers (docs/security-checks.md).
+    environment: security-scan
     timeout-minutes: 10
     env:
       PYTHONDONTWRITEBYTECODE: "1"
@@ -41,7 +44,10 @@ jobs:
           cache-dependency-path: harness/security-scan-requirements.txt
 
       - name: Install scanner
-        run: python -m pip install --disable-pip-version-check -r harness/security-scan-requirements.txt
+        # Every package is pinned with hashes (harness/security-scan-requirements.in).
+        run: >-
+          python -m pip install --disable-pip-version-check --require-hashes
+          --only-binary :all: -r harness/security-scan-requirements.txt
 
       - name: Check renderer with synthetic data
         run: python -m unittest discover -s harness -p 'test_render_security_report.py'
@@ -155,8 +161,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      pages: write
-      id-token: write
+      pages: write # deploy the report to GitHub Pages
+      id-token: write # OIDC token that actions/deploy-pages requires
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

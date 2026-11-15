@@ -1,0 +1,4 @@
+# Top-level requirements of harness/security_scan.py. The installed set is
+# harness/security-scan-requirements.txt, every package pinned with hashes;
+# regenerate it after changing this file (see harness/security-scan.md).
+pydantic-ai-slim[anthropic]==2.68.0

@@ -4,8 +4,10 @@
 
 In GitHub, open **Actions → Security scan · Haiku → Run workflow**, choose the
 revision, and run. The workflow has only a `workflow_dispatch` trigger: pushes,
-pull requests, and schedules never start this scan. It uses the repository
-secret `CLAUDE_API_KEY_SCX`, mapped to `ANTHROPIC_API_KEY` only for the scan step.
+pull requests, and schedules never start this scan. It uses the secret
+`CLAUDE_API_KEY_SCX`, mapped to `ANTHROPIC_API_KEY` only for the scan step.
+The scan job runs in the `security-scan` environment: an admin should keep
+the secret there, limited to `main` (docs/security-checks.md).
 
 The fixed small preset reviews the five files listed below, allows one generation
 request, caps input at 30,000 tokens and output at 3,500, and disables retries.
@@ -53,7 +55,7 @@ Run from the repository root with Python 3.11 or newer:
 
 ```sh
 python3 -m venv /tmp/golem-p2p-security-venv
-/tmp/golem-p2p-security-venv/bin/pip install -r harness/security-scan-requirements.txt
+/tmp/golem-p2p-security-venv/bin/pip install --require-hashes --only-binary :all: -r harness/security-scan-requirements.txt
 /tmp/golem-p2p-security-venv/bin/python harness/security_scan.py --dry-run
 /tmp/golem-p2p-security-venv/bin/python harness/security_scan.py --output /tmp/golem-p2p-security.json
 ```
@@ -80,6 +82,20 @@ Findings are model hypotheses until checked against the code and reproduced.
 This deliberately excludes endpoint handshakes, application streams, CLI,
 dependency vulnerabilities and deployment configuration. It is not a complete
 security audit or a clean bill of health.
+
+## Dependencies
+
+`harness/security-scan-requirements.in` names the top-level package;
+`harness/security-scan-requirements.txt` pins it and everything it pulls in,
+with hashes, so the job that later holds the API key installs exactly the
+reviewed set. The deterministic security workflow audits that file with
+pip-audit (docs/security-checks.md). After changing the `.in` file, or to
+pick up fixed releases, regenerate the lock file with
+[uv](https://docs.astral.sh/uv/):
+
+```sh
+uv pip compile harness/security-scan-requirements.in --universal --python-version 3.11 --generate-hashes -o harness/security-scan-requirements.txt
+```
 
 ## HTML reports
 
