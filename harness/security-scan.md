@@ -49,7 +49,7 @@ report shows those checks in their own section.
 
 ## What the runs of 2026-11-15 showed
 
-Eleven runs, about $0.11 in total by the configured rates. Benchmarks used
+Twelve runs, about $0.14 in total by the configured rates. Benchmarks used
 `source_ref` to review revisions that still had a known bug:
 
 | Bug (revision) | No thinking | Low | Medium |
@@ -71,7 +71,8 @@ resolved to a replayed older record), `883612e` and `1d2d30d` (rejected
 dialers held handshake slots for 2 s; the waits are now bounded),
 `7ad9104` (certificates with appended bytes decoded), `e3862a1` (peer bytes
 in `listen` debug logs could forge lines), `4b60c3e` (unbounded registry
-management answers).
+management answers), `1634cc3` (reading the times of an unchecked
+certificate could panic; the registry state's `Debug` showed its key).
 
 Reported and not changed, for a decision or as known limits:
 
@@ -87,7 +88,10 @@ Reported and not changed, for a decision or as known limits:
 * Store and directory: valid records cost nothing to make, so a flood of
   long-lived records evicts honest ones (docs/design.md, section 6), and
   every directory PUT costs up to 17 signature checks. Rate limits belong in
-  the proxy in front of a public directory.
+  the proxy in front of a public directory. Once a flood has evicted an
+  endpoint's newest record, the store has forgotten it, and a replayed older
+  record of that endpoint is accepted again (an identity it withdrew then
+  resolves to an endpoint that refuses it) until the node publishes again.
 * The membership certificate is not covered by the record signatures:
   whoever relays a record can strip it. Members never store a record without
   a valid certificate, and a members-only directory refuses it, but in an
