@@ -10,13 +10,13 @@ on:
       scope:
         description: Area to review (all = one request per area)
         type: choice
-        options: [records, handshake, closed-network, cli-servers, all]
-        default: records
+        options: [all, records, handshake, closed-network, cli-servers]
+        default: all
       thinking:
-        description: Haiku thinking effort (off is cheapest)
+        description: Haiku thinking effort (medium found the known bugs; off is cheapest)
         type: choice
-        options: ["off", low, medium]
-        default: "off"
+        options: [medium, low, "off"]
+        default: medium
       source_ref:
         description: Review the sources of this git revision instead (empty = the selected branch)
         type: string

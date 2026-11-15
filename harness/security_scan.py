@@ -36,6 +36,18 @@ MAX_FINDINGS = 5
 class Area:
     files: tuple[str, ...]
     focus: str
+    # Facts from files outside the area that its code relies on.
+    context: str = ""
+
+
+RECORD_FACTS = (
+    "Established in record.rs, which is not supplied here: VerifiedRecord::verify "
+    "takes at most 4096 bytes, rejects trailing bytes, and checks the endpoint "
+    "signature and a signature of every listed identity. A VerifiedRecord lists 1 "
+    "to 16 distinct identities (the default first), at most 8 https relay URLs of "
+    "at most 256 bytes each and at most 16 direct addresses; it expires within "
+    "24 h (plus 5 min clock skew) and its sequence number is not in the future."
+)
 
 
 LIB = "crates/golem-p2p/src/"
@@ -55,6 +67,7 @@ AREAS = {
         "application stream headers, connection reuse, limits on streams, frames "
         "and concurrent work, timeouts, and what a remote peer can make the node "
         "allocate, block on or panic on.",
+        RECORD_FACTS,
     ),
     "closed-network": Area(
         (LIB + "membership.rs", LIB + "registry.rs", LIB + "discovery.rs",
@@ -64,6 +77,7 @@ AREAS = {
         "account tokens, authorization of node registration and removal, state "
         "persistence), and the HTTP clients for the directory and the registry "
         "(response size limits, what a malicious server can do).",
+        RECORD_FACTS,
     ),
     "cli-servers": Area(
         (CLI + "listen.rs", LIB + "addrs.rs"),
@@ -71,6 +85,7 @@ AREAS = {
         "remote peers (limits, resource use, refusals), and which local "
         "addresses the node publishes (no container, VM or internal addresses "
         "leaked into public records).",
+        RECORD_FACTS,
     ),
 }
 SCOPES = {**{name: (name,) for name in AREAS}, "all": tuple(AREAS)}
@@ -186,6 +201,8 @@ def snapshot(area, commit, checks):
         sections.append(f"FILE {name}\n" + "\n".join(
             f"{i}: {line}" for i, line in enumerate(lines, 1)))
     prompt = [f"Area under review: {area.focus}"]
+    if area.context:
+        prompt.append(area.context)
     if checks:
         prompt.append("Deterministic checks of this revision, for context only (their "
                       "findings are reported separately; do not repeat them):\n" + "\n".join(
@@ -341,9 +358,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="Show scope and limits without API calls")
     parser.add_argument("--output", type=Path, default=ROOT / "harness/results/security-haiku.json")
-    parser.add_argument("--scope", choices=tuple(SCOPES), default="records",
+    parser.add_argument("--scope", choices=tuple(SCOPES), default="all",
                         help="Area to review, or all (one request per area)")
-    parser.add_argument("--thinking", choices=("off", "low", "medium"), default="off",
+    parser.add_argument("--thinking", choices=("off", "low", "medium"), default="medium",
                         help="Haiku thinking effort; thinking raises the output limit")
     parser.add_argument("--source-ref", help="Review the sources of this git revision instead of the working tree")
     parser.add_argument("--checks", type=Path, help="Deterministic check results (JSON lines) to include")

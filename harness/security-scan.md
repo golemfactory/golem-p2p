@@ -15,11 +15,11 @@ filesystem, web or other tools; the response schema is all it gets.
 
 | Scope | Files | Input tokens (approx.) |
 |---|---|---|
-| `records` (default) | record, identity, signer, store, directory | 30,000 |
+| `records` | record, identity, signer, store, directory | 30,000 |
 | `handshake` | endpoint, wire, error | 42,000 |
 | `closed-network` | membership, registry (library and CLI), discovery, lookup | 27,000 |
 | `cli-servers` | the CLI's listen server, published addresses (addrs) | 16,000 |
-| `all` | each of the above, one request per area | 115,000 |
+| `all` (default) | each of the above, one request per area | 115,000 |
 
 Limits per request: input 60,000 tokens (counted before sending, well below
 the 100,000 tokens where Haiku's price per token rises fivefold), output
@@ -31,9 +31,12 @@ tokens, prompts up to 100K tokens), the worst cases are $0.008 per area
 without thinking and $0.014 with it, so $0.056 for `all` with thinking.
 Pricing may change; estimates are not billing guarantees.
 
-`--thinking low|medium` turns on Haiku's adaptive thinking at that effort.
-The output schema is then requested as the response format (structured
-output) instead of a forced tool call, which thinking does not allow.
+`--thinking medium` (the default) or `low` turns on Haiku's adaptive
+thinking at that effort; `off` disables it. With thinking, the output schema
+is requested as the response format (structured output) instead of a forced
+tool call, which thinking does not allow. Areas other than `records` get a
+short list of what record verification guarantees, so that the model does
+not report missing checks that `record.rs` already makes.
 
 `--source-ref REV` reviews the files of another revision (read with
 `git show`) with the current scanner, for example the commit before a fix,
