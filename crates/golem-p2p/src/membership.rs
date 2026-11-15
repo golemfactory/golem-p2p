@@ -403,12 +403,33 @@ impl RegistryClient {
     }
 }
 
+/// Largest answer of the registry's management API that a client reads.
+#[cfg(feature = "http-directory")]
+const MAX_MANAGEMENT_ANSWER: usize = 4 << 20;
+
+/// Reads a response body of at most `limit` bytes.
+#[cfg(feature = "http-directory")]
+async fn read_body(mut resp: reqwest::Response, limit: usize) -> Result<Vec<u8>, IssueError> {
+    let mut body = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| IssueError::Unavailable(e.to_string()))?
+    {
+        if body.len() + chunk.len() > limit {
+            return Err(IssueError::Unavailable("answer too large".into()));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
 #[cfg(feature = "http-directory")]
 impl RegistryClient {
     /// One call of the registry's management API (see [`crate::registry`]):
     /// `method` (`GET`, `POST`, `PUT`, `DELETE`) on `path` (e.g.
     /// `v1/nodes/0x..`), with an optional bearer token. Returns the HTTP
-    /// status and the body text.
+    /// status and the body text (at most 4 MiB).
     pub async fn call(
         &self,
         method: &str,
@@ -430,11 +451,8 @@ impl RegistryClient {
             .await
             .map_err(|e| IssueError::Unavailable(e.to_string()))?;
         let status = resp.status().as_u16();
-        let body = resp
-            .text()
-            .await
-            .map_err(|e| IssueError::Unavailable(e.to_string()))?;
-        Ok((status, body))
+        let body = read_body(resp, MAX_MANAGEMENT_ANSWER).await?;
+        Ok((status, String::from_utf8_lossy(&body).into_owned()))
     }
 }
 
@@ -478,18 +496,7 @@ impl CertIssuer for RegistryClient {
                 .await
                 .map_err(|e| IssueError::Unavailable(e.to_string()))?;
             let status = resp.status();
-            let mut body = Vec::new();
-            let mut resp = resp;
-            while let Some(chunk) = resp
-                .chunk()
-                .await
-                .map_err(|e| IssueError::Unavailable(e.to_string()))?
-            {
-                if body.len() + chunk.len() > 2 * MAX_CERT_SIZE + 1024 {
-                    return Err(IssueError::Unavailable("answer too large".into()));
-                }
-                body.extend_from_slice(&chunk);
-            }
+            let body = read_body(resp, 2 * MAX_CERT_SIZE + 1024).await?;
             let text = String::from_utf8_lossy(&body).trim().to_string();
             // Too many requests (a rate limit in front of the registry) and
             // request timeouts are temporary, not a refusal.
