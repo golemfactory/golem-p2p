@@ -1,0 +1,28 @@
+realworld: starting directory on p2p-relay1:56050
+realworld: natcheck: reflector on p2p-relay1 ports 56090,56091
+natcheck node=real1 try=1 filtering=APDF local=192.168.1.2:45935 mapped=213.163.75.157:45935,213.163.75.157:45935,213.163.75.157:45935 mapping=EIM port_preserved=yes unmapped_inbound=no unsolicited=-
+natcheck node=real1 try=2 filtering=APDF local=192.168.1.2:41391 mapped=213.163.75.157:41391,213.163.75.157:41391,213.163.75.157:41391 mapping=EIM port_preserved=yes unmapped_inbound=no unsolicited=-
+natcheck node=real1 try=3 filtering=APDF local=192.168.1.2:43209 mapped=213.163.75.157:43209,213.163.75.157:43209,213.163.75.157:43209 mapping=EIM port_preserved=yes unmapped_inbound=no unsolicited=-
+natcheck node=real2 try=1 filtering=APDF local=192.168.2.2:59031 mapped=213.163.75.157:37580,213.163.75.157:19173,213.163.75.157:3983 mapping=APDM port_preserved=no unmapped_inbound=no unsolicited=-
+natcheck node=real2 try=2 filtering=APDF local=192.168.2.2:51997 mapped=213.163.75.157:31706,213.163.75.157:62488,213.163.75.157:54538 mapping=APDM port_preserved=no unmapped_inbound=no unsolicited=-
+natcheck node=real2 try=3 filtering=APDF local=192.168.2.2:54299 mapped=213.163.75.157:34934,213.163.75.157:48177,213.163.75.157:14774 mapping=APDM port_preserved=no unmapped_inbound=no unsolicited=-
+READY node_id=0x1639371f7126d595115a96b3428cd24e36bfcf42 identities=0x1639371f7126d595115a96b3428cd24e36bfcf42 endpoint_id=01f15a19f7f93e981ddd1c185789bff2793488cb59a044a5a0dab2e4439d23d0 relays=["https://213.163.75.157:56000/"] addrs=[65.109.154.126:37834, [2a01:4f9:3080:1146::2]:52109]
+run=1 listener=local sender=real1 ok=1 replies=875 t_first=0.37 first_ms=111 first_path=direct t_direct=0.37 last_path=direct switches=0 direct_pct=100 relay_ms=- direct_ms=33 error=-
+run=1 listener=real1 sender=local ok=1 replies=864 t_first=0.75 first_ms=167 first_path=relay t_direct=0.82 last_path=direct switches=1 direct_pct=100 relay_ms=34 direct_ms=33 listener_saw=direct:862,relay:3 error=-
+READY node_id=0x1639371f7126d595115a96b3428cd24e36bfcf42 identities=0x1639371f7126d595115a96b3428cd24e36bfcf42 endpoint_id=ef76eea9b3a90f7973f24fc583d08c664e317ce28e2221d52d8527338d9efc11 relays=["https://213.163.75.157:56000/"] addrs=[65.109.154.126:44811, [2a01:4f9:3080:1146::2]:37656]
+run=1 listener=local sender=real2 ok=1 replies=792 t_first=0.38 first_ms=123 first_path=direct t_direct=0.38 last_path=direct switches=0 direct_pct=100 relay_ms=- direct_ms=37 error=-
+run=1 listener=real2 sender=local ok=1 replies=782 t_first=0.75 first_ms=167 first_path=relay t_direct=0.79 last_path=direct switches=1 direct_pct=100 relay_ms=- direct_ms=37 listener_saw=direct:781,relay:2 error=-
+READY node_id=0x1639371f7126d595115a96b3428cd24e36bfcf42 identities=0x1639371f7126d595115a96b3428cd24e36bfcf42 endpoint_id=8aa69eebf78ed5f578ce391448820b1995991b4324b889daa179af51582c6bc3 relays=["https://213.163.75.157:56000/"] addrs=[65.109.154.126:42238, [2a01:4f9:3080:1146::2]:42614]
+run=2 listener=local sender=real1 ok=1 replies=794 t_first=0.33 first_ms=113 first_path=relay t_direct=0.40 last_path=direct switches=1 direct_pct=100 relay_ms=34 direct_ms=37 error=-
+run=2 listener=real1 sender=local ok=1 replies=856 t_first=0.77 first_ms=157 first_path=relay t_direct=0.85 last_path=direct switches=1 direct_pct=100 relay_ms=37 direct_ms=34 listener_saw=direct:854,relay:3 error=-
+READY node_id=0x1639371f7126d595115a96b3428cd24e36bfcf42 identities=0x1639371f7126d595115a96b3428cd24e36bfcf42 endpoint_id=d86d53f8206baecc9715ff8fad9468df50b2a2458f8352534a42ee0b7bcdb5a0 relays=["https://213.163.75.157:56000/"] addrs=[65.109.154.126:43387, [2a01:4f9:3080:1146::2]:51615]
+run=2 listener=local sender=real2 ok=1 replies=869 t_first=0.37 first_ms=113 first_path=direct t_direct=0.37 last_path=direct switches=0 direct_pct=100 relay_ms=- direct_ms=34 error=-
+run=2 listener=real2 sender=local ok=1 replies=862 t_first=0.77 first_ms=177 first_path=relay t_direct=0.85 last_path=direct switches=1 direct_pct=100 relay_ms=37 direct_ms=33 listener_saw=direct:861,relay:2 error=-
+READY node_id=0x1639371f7126d595115a96b3428cd24e36bfcf42 identities=0x1639371f7126d595115a96b3428cd24e36bfcf42 endpoint_id=413bc458a512dbed1a0ff44f39b7c6e7d82b026ddb1b7f099c81a02bdb4a4e70 relays=["https://213.163.75.157:56000/"] addrs=[65.109.154.126:46367, [2a01:4f9:3080:1146::2]:35142]
+run=3 listener=local sender=real1 ok=1 replies=793 t_first=0.38 first_ms=122 first_path=direct t_direct=0.38 last_path=direct switches=0 direct_pct=100 relay_ms=- direct_ms=37 error=-
+run=3 listener=real1 sender=local ok=1 replies=789 t_first=0.77 first_ms=165 first_path=relay t_direct=0.80 last_path=direct switches=1 direct_pct=100 relay_ms=- direct_ms=37 listener_saw=direct:788,relay:2 error=-
+READY node_id=0x1639371f7126d595115a96b3428cd24e36bfcf42 identities=0x1639371f7126d595115a96b3428cd24e36bfcf42 endpoint_id=5caff5d103b192deaec15ba937044bb70a07f72722b65572ac18c22af2987b07 relays=["https://213.163.75.157:56000/"] addrs=[65.109.154.126:36927, [2a01:4f9:3080:1146::2]:49357]
+run=3 listener=local sender=real2 ok=1 replies=875 t_first=0.37 first_ms=110 first_path=direct t_direct=0.37 last_path=direct switches=0 direct_pct=100 relay_ms=- direct_ms=33 error=-
+run=3 listener=real2 sender=local ok=1 replies=863 t_first=0.80 first_ms=177 first_path=relay t_direct=0.87 last_path=direct switches=1 direct_pct=100 relay_ms=37 direct_ms=33 listener_saw=direct:861,relay:3 error=-
+realworld: results in harness/results/2026-11-15-realworld-master/full-cone/results.txt
+realworld: cleaned up (local processes, lab listeners, relay VM units)

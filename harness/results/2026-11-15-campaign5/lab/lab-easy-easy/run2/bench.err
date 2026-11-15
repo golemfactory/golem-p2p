@@ -1,0 +1,3 @@
+2026-11-15T11:43:59.874935Z  INFO golem_p2p::endpoint: golem-p2p endpoint bound node_id=0xf3162063b5c19be92e97804f4898142f763d6065 endpoint_id=23f086b873
+2026-11-15T11:44:14.358895Z  INFO golem_p2p::endpoint: golem-p2p endpoint bound node_id=0x411a90b234a66c3c855292822abf251332234d0d endpoint_id=647dd1ec39
+2026-11-15T11:44:21.567710Z ERROR iroh::socket::transports::relay: relay_recv_channel closed

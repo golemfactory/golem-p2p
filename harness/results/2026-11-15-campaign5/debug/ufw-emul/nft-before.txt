@@ -1,0 +1,6 @@
+table inet gpl_ufw_emul {
+	chain input {
+		type filter hook input priority filter; policy accept;
+		udp dport 56095 ct state new counter packets 0 bytes 0 drop
+	}
+}

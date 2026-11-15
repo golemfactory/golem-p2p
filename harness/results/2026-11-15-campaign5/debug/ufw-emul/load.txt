@@ -1,0 +1,12 @@
+2026-11-15T12:26:14Z rw-easy-to-ufw run1 0.09 0.69 0.73 1/870
+2026-11-15T12:26:30Z rw-symmetric-to-ufw run1 0.07 0.66 0.72 2/870
+2026-11-15T12:26:46Z rw-ufw-to-easy run1 0.06 0.63 0.71 1/869
+2026-11-15T12:27:03Z rw-ufw-to-symmetric run1 0.12 0.60 0.70 1/863
+2026-11-15T12:27:20Z rw-easy-to-ufw run2 0.09 0.57 0.69 1/880
+2026-11-15T12:27:36Z rw-symmetric-to-ufw run2 0.07 0.54 0.68 1/873
+2026-11-15T12:27:52Z rw-ufw-to-easy run2 0.66 0.65 0.71 1/881
+2026-11-15T12:28:09Z rw-ufw-to-symmetric run2 0.51 0.62 0.70 1/875
+2026-11-15T12:28:26Z rw-easy-to-ufw run3 0.40 0.59 0.69 1/879
+2026-11-15T12:28:42Z rw-symmetric-to-ufw run3 0.28 0.55 0.67 1/879
+2026-11-15T12:28:58Z rw-ufw-to-easy run3 0.22 0.52 0.66 1/872
+2026-11-15T12:29:15Z rw-ufw-to-symmetric run3 0.17 0.49 0.65 1/869

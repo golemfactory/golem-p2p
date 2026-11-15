@@ -1,0 +1,1 @@
+READY node_id=0xdfe15b9623e784f65d61ac7cfb12cfae7a40be27 identities=0xdfe15b9623e784f65d61ac7cfb12cfae7a40be27 endpoint_id=c9b54eb0792bd75992a3d8f74b63f1b87ae2d1dcd5e4f8d4c48f23c0b014cf93 relays=["https://213.163.75.157:56000/"] addrs=[213.163.75.157:18577, 192.168.2.2:40902]

@@ -1,0 +1,14 @@
+{
+ "bench_args": "--relay https://213.163.75.157:56000,quic=56001 --directory http://213.163.75.157:56050/ --relay-ca /home/ubuntu/golem-p2p-lab/certs/real-relay.crt --to 0x20d35e95b00927f7ed4b1569737e898ffddf0db6 ",
+ "bencher": "real1",
+ "bencher_delay": null,
+ "bencher_jitter": null,
+ "bencher_loss": null,
+ "bencher_profile": "easy",
+ "bencher_rate": null,
+ "bencher_udp_timeout": 120,
+ "bencher_uplink": "real",
+ "deployed": "656d229 2026-11-15T11:35:16Z iroh-relay 1.5.0 sha256:a5150e2790966829c7a91a8793e6ca10c0f8abee55cc9e84d751763ae27f75c2",
+ "run": "rw-easy-to-ufw-r1",
+ "to": "0x20d35e95b00927f7ed4b1569737e898ffddf0db6"
+}

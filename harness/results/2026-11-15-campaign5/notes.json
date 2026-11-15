@@ -1,0 +1,191 @@
+{
+ "commit": "656d229 (harness on top of e2ff75b; the golem-p2p crates are those of 31c954c)",
+ "binary": "golem-p2p-cli 0.1.0 built from 656d229 with Rust 1.96.0 (release; tracked files clean), sha256 cc4a151ba7261544a2cb7b7d27f9adac1f2b69c651570ac9a2399e6c6bbb6544, byte-identical to /usr/local/bin/golem-p2p deployed on master and on puppet's host earlier the same day (built from e2ff75b); the same binary ran on this machine, on the lab VM (DEPLOYED: 656d229) and as the temporary directory on the relay VM (versions.txt). It links iroh 1.5.0 from the golemfactory/iroh fork, rev 4ad24ac2761e97fe57791d8d898fd608b78ca0d5 (see iroh), netwatch 0.20.0",
+ "iroh": {
+  "version": "1.5.0",
+  "source": "golemfactory/iroh fork, rev 4ad24ac2761e97fe57791d8d898fd608b78ca0d5 (branch relay-recovery: upstream main 2c12bb58 plus one commit, bounded relay-actor waits and recovery of stalled relay tasks, draft upstream PR n0-computer/iroh#4686), via the workspace [patch.crates-io] for iroh, iroh-base, iroh-dns and iroh-relay",
+  "campaign_4": "iroh 1.4.1 and iroh-relay 1.4.1 from crates.io, netwatch 0.19.3",
+  "what_changed_in_iroh": "12 commits from 1.4.1 to the fork rev: netwatch 0.19.3 -> 0.20.0 (and portmapper 0.20, unused), the relay actor patch (4ad24ac2), relay URLs keep their path prefix (a trailing / is added), relay server: handshake/establish timeout fix (#4621) and no proxy credentials in debug logs, SendStream::set_affinity, CI and dependabot changes. The QUIC stack (noq 1.4.0) and the rest of the data path are the same crate versions as in campaign 4 (Cargo.lock diff: iroh, iroh-relay, netwatch, netlink-*, netdev, lru only).",
+  "netwatch": "0.20.0"
+ },
+ "relay_versions": {
+  "lab": "iroh-relay 1.5.0 from the same fork rev (built on master, debug info stripped), sha256 a5150e2790966829c7a91a8793e6ca10c0f8abee55cc9e84d751763ae27f75c2; deployed by harness/lab/deploy.sh with IROH_RELAY_BIN, replacing the lab's 1.4.1 (sha256 9b9804c7...ac71b3)",
+  "real": "iroh-relay 1.4.1 (sha256 9b9804c768503f3b4840ee011c1c796c26683d0f2496c9d29a2ab3c3bcac71b3), puppet's unchanged service iroh-relay on p2p-relay1 (https://213.163.75.157:56000,quic=56001), running since 2026-11-14 21:27:13 UTC, same pid (3250) before and after"
+ },
+ "date": "2026-11-15 (UTC 11:35-12:14; debug runs 12:14-12:30)",
+ "environment": {
+  "machines": [
+   {
+    "name": "hetzner",
+    "role": "controller, build machine, public node (now called master, master.golemp2p.arkiv-global.net)",
+    "location": "Hetzner, Helsinki",
+    "addresses": "65.109.154.126, 2a01:4f9:3080:1146::2",
+    "os": "Ubuntu 26.04 LTS, kernel 7.0.0-22, 32 vCPU, 62 GB (reinstalled on 2026-11-11; campaign 4 ran on the previous install, kernel 7.0.0-43)",
+    "notes": "Public IP on the interface and, since the reinstall, no host firewall: ufw inactive, INPUT policy ACCEPT (campaign 4: ufw default-deny inbound, UDP 8000 allowed). So the scenarios named *-ufw (a random UDP port, which ufw dropped) now run on an open port; see observations and debug/ufw-emul. 5 Docker bridges (campaign 4: 14). Running meanwhile, idle: golem-p2p registry, directory and testnet listener (systemd), nginx, Docker services, the reflector on udp 56090."
+   },
+   {
+    "name": "p2p-natlab",
+    "role": "NAT lab (network namespaces, nftables NAT profiles, tc netem)",
+    "location": "VM on puppet's host 213.163.75.157 (i3D)",
+    "os": "Ubuntu 26.04.1, kernel 7.0.0-43, nftables 1.1.6, 8 vCPU / 16 GB",
+    "notes": "lab-internal relay (now iroh-relay 1.5.0) and directory in namespace gpl-svc; uplink=real nodes leave through the emulated NAT, the VM's masquerade and the host's NAT (p2p-hostnat profile port-restricted); load average 0.1 before the campaign"
+   },
+   {
+    "name": "p2p-relay1",
+    "role": "real relay",
+    "location": "VM on the same host",
+    "os": "Ubuntu 26.04, kernel 7.0.0-43, 4 vCPU / 7 GB",
+    "notes": "puppet's iroh-relay 1.4.1 (lab relay :56000/:56001, also its public relay :56002/:56003, not used here), ports forwarded by p2p-hostnat; temporary golem-p2p directory on port 56050 during the realworld/startup steps and the ufw-emul runs (stopped afterwards)"
+   }
+  ],
+  "build_machine_load": "This machine's 1-min load average (32 vCPU), sampled every 10 s (hetzner-load.txt): realworld 12:02:38-12:11:24 UTC 0.01-0.32 (median 0.12), startup 0.02-0.16, relay 0.04-0.15 (campaign 4: 24-49 from other sessions). No builds or other work ran during these steps. Visible effect: the benches on this machine bind as fast as in campaign 3 again (startup-hetzner-qad-56001 667 -> 588 ms p50, qad-off 666 -> 596, relay-single 584 -> 507; campaign 3: 608 / 619 / 523).",
+  "relay": {
+   "lab": "iroh-relay 1.5.0 (fork rev 4ad24ac2, sha256 a5150e27...f75c2; campaigns 1-4: 1.4.1) at https://198.18.0.1,quic=7842 in the lab's services namespace; the relay link adds 10 ms each way",
+   "real": "iroh-relay 1.4.1 (sha256 9b9804c7...ac71b3, puppet's service, unchanged) at https://213.163.75.157:56000,quic=56001 with --relay-ca p2p-relay1.crt",
+   "traffic_through_real_relay": "271.6 MB received and forwarded by the relay (realworld 123.2 MB, startup 0, relay step 148.4 MB; campaign 4: 418.3 MB = 270.0 + 0 + 148.3), from relayserver_bytes_recv_total/bytes_sent_total; the realworld share is smaller because the three *-ufw scenarios that were relayed now go direct. relayserver_send_packets_dropped_total stayed at 34 (no drops during the campaign)."
+  },
+  "directories": "lab: http://198.18.0.1:8080/; realworld, startup and debug/ufw-emul: http://213.163.75.157:56050/ (temporary, on p2p-relay1); relay step: 127.0.0.1 on this machine",
+  "paths": "As in campaigns 1-4. Lab: every access link 10 ms each way, relay link 10 ms each way (direct RTT ~40 ms, relayed ~80 ms); lossy1 50 ms + 1 % loss each way. Hetzner <-> puppet's host: per flow ~34 ms or ~37.5 ms RTT (the two route clusters of every campaign).",
+  "bench_settings": "defaults of 31c954c, otherwise campaign 4's (latency 12 s at 200 ms, 64 B; upload and download 10 MB each, stopped at 8 s, the count of an upload written completely awaited until 8 s or max(3 s, its duration, 3 smoothed RTTs) after writing, at most 30 s; concurrency 8 streams, 8 MB, 256 KiB requests or smaller on a slow link; relay transfers capped at 4 MB; timeout 10 s; --compare-relay and --idle 60s where listed). Two bench changes since campaign 4 (golem-p2p, not iroh): the concurrency phase no longer starts over when its first requests are on course to finish by three quarters of the time at the connection's recent pace (097e446; new concurrency.first_reply_ms), and requests cut off at a restart or the time limit are cancelled on the wire (a08d715: the library resets and stops a request's streams unless the whole response was read). The relay group uses --relay-only on both sides; the parallel relay runs skip the concurrency phase.",
+  "method": "Same scenarios (scenarios.jsonl identical to campaign 4's), arguments, run counts and order (harness/campaign/campaign5.sh = campaign4.sh with a new name, output directory, comparisons, and relay versions in versions.txt), run with `campaign5.sh all`: every run starts fresh processes (new iroh keys and ports; bench uses a temporary identity); 3 runs per scenario, rounds interleaved; parallel relay runs: 2 rounds of 2 and of 4 benches. Extra, not in summary.json: debug/lossy-extra (10 more lab-netem-pr runs, as in campaigns 3 and 4); debug/ufw-emul (the four *-ufw real-world scenarios again, 3 rounds, with campaign 4's ufw filtering emulated on one UDP port: run.sh); debug/shutdown-logs (a local repro of the new shutdown log lines with iroh 1.4.1, upstream iroh main and the fork); and harness/results/2026-11-15-realworld-master (realworld.sh, as on 2026-11-14).",
+  "sides": "a = the node running `golem-p2p bench` (it dials), b = the node running `golem-p2p listen`",
+  "time_utc": "2026-11-15: deploy 11:35:16, lab 11:35:22-11:58:44, labextra 11:58:44-12:02:38, realworld 12:02:38-12:11:24, startup 12:11:28-12:12:06, relay 12:12:08-12:14:02, summarize and cleanup 12:14:05; debug/lossy-extra 12:14:20-12:26:00, debug/shutdown-logs (local, this machine) 12:16-12:25, debug/ufw-emul 12:26:10-12:29:33; summarize re-run with these notes afterwards"
+ },
+ "scenario_notes": {
+  "lab-public-easy": "Direct from the first packet; 0 of 416 settled latency packets lost. Concurrency 224-268 Mbps.",
+  "lab-easy-easy": "Direct from the first packet; 0/427.",
+  "lab-sym-easy": "Relay first, direct after ~305 ms (as in campaign 4); 0/339, no hint.",
+  "lab-easy-sym": "Symmetric bench dialing an EIF listener: direct from the first packet, 0 lost.",
+  "lab-pr-pr": "Relay first, direct after ~290 ms; 0/338; no false positive.",
+  "lab-sym-sym": "Relay only, through the lab's iroh-relay 1.5.0: RTT 80.6 ms, 35 Mbps, as with 1.4.1; hard_nat_likely names this side's symmetric NAT (right).",
+  "lab-cgnat-easy": "Relay first, direct after ~290 ms; 0/340.",
+  "lab-double-easy": "Direct from the first packet; 0 lost.",
+  "lab-easy-udpb": "UDP-blocked bench: relay only, bind 3.2 s, udp_blocked (right), as before.",
+  "lab-udpb-easy": "UDP-blocked listener: relay only; the verdict points at the peer's network (right).",
+  "lab-pr-sym": "Relay only; hard_nat_likely names the bench's symmetric NAT (right).",
+  "lab-rc-sym": "Direct after ~290 ms; 0/339. The compare flag on concurrency (201.6 -> 257.9 Mbps) is run-to-run spread on a ~300 ms phase (campaign 4's lab direct runs: 185-252 Mbps, campaign 5's: 200-269).",
+  "lab-netem-pr": "Bad link on the bench side (50 ms + 1 % loss each way). packet_loss hint in 2 of 3 runs (1/118, 2/123 counted from 1.27-1.32 s); run 1 lost 0 of 114: the one misleading verdict, a sampling miss as in campaigns 3 and 4. Healthy/exit 0 3/3, relay_compare ok and reachable 3/3. Runs 1 and 2 uploaded 10 MB in 5.0 and 4.2 s (15.9 and 19.0 Mbps; the link is bimodal in every campaign: 0.76-30.4 Mbps up in campaign 4's 13 runs), so their concurrency requests were not made smaller (256 KiB); run 1's first reply came at 5.37 s and the phase went on (no restart, 097e446's rule). With debug/lossy-extra 13 runs: see observations.",
+  "lab-idle30-pr": "Survived 60 s idle in 3/3 runs, recovery 41 ms; no false positive.",
+  "lab-idle5-pr": "Survived 60 s idle in 3/3 runs, recovery 41 ms.",
+  "lab-natflush-pr": "conntrack -F on both NAT routers 20 s into the idle phase: survived on the same direct path in 3/3, recovery 41 ms.",
+  "rw-easy-to-ufw": "Direct from the first packet in 3/3 (ttd 77-79 ms; campaign 4: relay first, direct after 146-154 ms): with no firewall here, the lab node's first packets to the listener's random port are no longer dropped. 145-148 Mbps both ways; none of campaign 4's slow Hetzner -> lab downloads. With ufw emulated (debug/ufw-emul) the campaign 4 behaviour comes back: relay first, direct after 142-149 ms, 3/3.",
+  "rw-easy-to-open": "Run 1 relay first (direct after 148 ms), runs 2-3 direct from the first packet (campaign 4: 3/3 direct first); 132-134 Mbps; relay_compare ok 3/3 (37.6 ms, 78/72 Mbps).",
+  "rw-symmetric-to-ufw": "Outcome change relay -> direct (3/3, direct from the first packet, 147 Mbps): the listener's random port is open now. With ufw emulated (debug/ufw-emul): relay only in 3/3 again, hard_nat_likely, as in campaign 4.",
+  "rw-symmetric-to-open": "Direct from the first packet in 3/3; 146-148 Mbps.",
+  "rw-udp-blocked-to-ufw": "Relay only, bind 3.0 s, udp_blocked (right); 77 Mbps through the real relay.",
+  "rw-udp-blocked-to-open": "Relay only, bind 3.0 s, udp_blocked (right).",
+  "rw-ufw-to-easy": "Outcome change relay -> direct (3/3, relay first, direct after ~190-220 ms, like rw-open-to-easy): the bench here no longer has ufw dropping the lab node's packets. With ufw emulated (debug/ufw-emul): relay only in 3/3, as in campaign 4. Whole-connection loss 3.6 % (congestion losses of the bulk phases, not judged).",
+  "rw-open-to-easy": "Direct after ~190-220 ms; settled loss 0/342. The compare flag on RTT (33.8 -> 37.3 ms) is the route cluster: campaign 4's runs 33.7/33.8/37.3, campaign 5's 37.4/37.4/34.2.",
+  "rw-ufw-to-symmetric": "Outcome change relay -> direct (3/3, direct after 180-217 ms): no firewall here any more. With ufw emulated (debug/ufw-emul): relay only in 3/3, as in campaign 4.",
+  "rw-open-to-symmetric": "Direct after ~220 ms; settled loss 0/341.",
+  "startup-hetzner-qad-56001": "bind 0.58-0.59 s (campaign 4: 0.65-0.68 s under load 27-35; campaign 3: 0.61 s).",
+  "startup-lab-easy-qad-56001": "bind ~0.25 s.",
+  "startup-hetzner-qad-7842": "Relay URL without ,quic=: bind 3.2 s; udp_blocked names both causes (right); status degraded/exit 5, as in campaigns 2-4.",
+  "startup-lab-easy-qad-7842": "Same in the lab node: bind 3.0 s.",
+  "startup-hetzner-qad-off": "QAD off: bind 0.58-0.61 s, UDP/NAT unknown.",
+  "startup-lab-easy-qad-off": "QAD off in the NAT'd lab node: bind 0.25 s.",
+  "relay-single": "Relay only through p2p-relay1 (iroh-relay 1.4.1, clients 1.5.0): RTT 71.7 ms, 39-42.5 Mbps per 4 MB transfer, concurrency 75-89 Mbps (campaign 4: 65-87).",
+  "relay-parallel2": "2 benches at once: 40.1-42.3 Mbps each, 81-82 Mbps aggregate (campaign 4: 79-82).",
+  "relay-parallel4": "4 benches at once: 38.4-42.4 Mbps each, 157-162 Mbps aggregate (campaign 4: 161-163); the relay dropped nothing."
+ },
+ "observations": [
+  {
+   "title": "iroh 1.5.0 (fork): no measurable change in outcomes, RTT, throughput, bind times or connection stability",
+   "detail": "Every scenario whose environment did not change keeps its direct/relay outcome; no connection was lost (0 disconnect events in 93 peer runs), QUIC counters in 93/93, every run reported. Lab: RTT 40.4 / 80.6 ms direct / relayed and throughput ~123 / ~35 Mbps as in campaigns 1-4, connect and hole-punching times identical (130 / 217-243 / 290-305 ms), bind 608-609 ms (3.2 s with UDP blocked), idle and NAT-flush survival 9/9 with 41 ms recovery. The lab's own relay ran iroh-relay 1.5.0 (relayed RTT, throughput and relay_compare unchanged); the real relay stayed on 1.4.1 and carried the 1.5.0 clients without drops. Real-world RTT 34-38 ms in the two route clusters, direct transfers 131-150 Mbps (campaign 4: 131-147 apart from its slow runs), relayed 76-78 Mbps. Verdicts: 110 right / 1 misleading / 0 wrong runs, as in campaigns 3 and 4.",
+   "severity": "info"
+  },
+  {
+   "title": "Outcome changes rw-symmetric-to-ufw, rw-ufw-to-easy, rw-ufw-to-symmetric (relay -> direct) are this machine's firewall, not iroh",
+   "detail": "The build machine was reinstalled on 2026-11-11 and has run without ufw since. The *-ufw scenarios used a random UDP port that ufw dropped (default deny inbound); campaign 4 relayed these three and reached rw-easy-to-ufw's direct path only after the relay. Now all four go direct (60 direct / 33 relay final paths, was 51 / 42). Control: debug/ufw-emul ran the four scenarios 3 times each with the same 1.5.0 binary, the local node on a fixed port (56095) and an nftables rule dropping new inbound UDP to it (what ufw did; replies to packets the node sent pass): rw-easy-to-ufw relay first then direct after 142-149 ms in 3/3, the other three relay only in 3/3, i.e. exactly campaign 4's outcomes. The verdict checks follow (254 -> 251: the relay_reason checks of the nine runs that are direct now became healthy_direct checks).",
+   "severity": "info"
+  },
+  {
+   "title": "New ERROR/WARN lines at every few endpoint shutdowns (iroh fork's relay-recovery commit, harmless)",
+   "detail": "84 of the campaign's 204 .err files (bench and listen, lab, real world, startup and relay: 41 % of process exits) end with `ERROR iroh::socket::transports::relay: relay_recv_channel closed` (several), `WARN iroh::socket::transports: All transports failed to receive. QUIC endpoint will be shutdown.` and `ERROR noq::endpoint: I/O error: All transports failed to receive`; campaign 4 had none. All of them come between -0.2 ms and +0.9 s of the process's last event (the bench_report, or the listener's final disconnect), i.e. during Endpoint::close; no run lost a connection or a report. Local repro (debug/shutdown-logs: a local relay and directory, 10 local checks and 10 listen/bench pairs per build): golem-p2p with iroh 1.4.1 (crates.io) 0 of 30 processes, with upstream iroh main 2c12bb58 (1.5.0 without the fork's commit) 0 of 30, with the fork rev 4ad24ac2 7 of 30. So it comes from the relay-recovery commit: at shutdown its relay actors no longer wait for the graceful WebSocket close (close_relay_sink is cancelled by the stop token), so they drop the datagram channel while the QUIC endpoint still polls the relay transport, whose poll_recv logs a closed channel at ERROR level. Not a golem-p2p bug; it should be fixed in the fork/upstream PR (e.g. treat the closed channel as shutdown, at debug level, or stop polling before the relay actor ends). Users and journald see ERROR lines on a normal stop until then.",
+   "severity": "iroh"
+  },
+  {
+   "title": "Lossy link: one upload count given up too early (bench bug, fixed in cda49ae); otherwise as in campaign 4",
+   "detail": "13 runs (3 campaign + 10 debug/lossy-extra): packet_loss hint 9/13 (campaign 4: 9/13; the misses lost 0 of 113-119 packets, sampling), loss counting settled 13/13, relay_compare ok 13/13, concurrency throughput measured 13/13 (0.66-3.00 Mbps, median 0.99; campaign 4: 0.46-3.64, 0.95), 1 restart (debug run 7; campaign 4: 2), and in 2 runs the phase went on past half the time because its requests were about to finish (097e446). Healthy/exit 0 in 12/13: debug/lossy-extra run 5 failed its upload with no_count ('sent the whole upload, but the listener did not report what it received within 6 s', exit 5, verdict degraded): writing ended about 6.8 s in, the bench waited as long again for the count (count_wait: as long as the upload took) and gave up 13.6 s after the start, and the listener had all 10,000,000 bytes 0.9 s later (listen.jsonl: sink, ms 14,399). At least 8.75 MB had arrived in the first 6.8 s (flow control keeps writing within one 1.25 MB stream window of what arrived); the rest took over 7.7 s more. The wait assumed the last window drains about as fast as the upload went. Fixed after the campaign (cda49ae): the wait for an upload's count goes on while the listener still acknowledges data (the connection's received bytes grew in the last 3 s), up to the existing 30 s cap; tested with links that deliver after the base wait, stop delivering, or never answer. The campaign binary does not have the fix.",
+   "severity": "bug"
+  },
+  {
+   "title": "Cut-off concurrency requests are cancelled on the wire now (campaign 4's bug, fixed in a08d715)",
+   "detail": "On the lossy link, concurrency requests reached the listener after the phase had ended in 2 of 13 runs (4 requests, at most 0.1 s later: in flight at the cut-off); campaign 4: 7 of 13 runs, 48 requests, up to 3.9 s later. After debug/lossy-extra run 7's restart the cut-off requests no longer used the uplink (it counted 1.06 Mbps; campaign 4's run 8: 0.46).",
+   "severity": "info"
+  },
+  {
+   "title": "No slow Hetzner -> lab downloads this time",
+   "detail": "All 24 direct real-world runs ran at 131-150 Mbps both ways (concurrency 252-334 Mbps). Campaign 4 had 3 slow runs (13.7-15.6 Mbps down) while this machine's load was 36-45; campaigns 1 and 3 had 1 and 2. This campaign ran on an idle machine (load < 0.4), which fits, but does not prove, CPU contention as the cause.",
+   "severity": "info"
+  },
+  {
+   "title": "Fast-path concurrency slightly higher",
+   "detail": "Lab direct concurrency 200-269 Mbps (median 236) over 33 runs, campaign 4 185-252 (219); relayed 75-79 (77, unchanged); real-world direct 252-334 (298). The phase takes 250-340 ms on these paths, so single runs vary by ~20 %; the shift is within that spread and not attributed (the data path, noq, is the same version). Not a regression.",
+   "severity": "info"
+  },
+  {
+   "title": "Harness: listener_saw was lost since 9e7afee (fixed in ff6fcd1)",
+   "detail": "9e7afee moved listen's per-request lines ('request from .. via PATH') to debug level; lab.sh pair/matrix/listen and realworld.sh count them for listener_saw, which would have been '-' in the real-world re-run. lab.sh and realworld.sh now start listeners without --json with RUST_LOG=warn,golem_p2p=info,golem_p2p::listen=debug (GPL_LISTEN_LOG). The campaign itself is not affected (its listeners use --json events).",
+   "severity": "bug"
+  },
+  {
+   "title": "The real relay is not a bottleneck at the tested load (unchanged)",
+   "detail": "Relay-only Hetzner -> p2p-relay1 -> Hetzner with 1.5.0 clients and the 1.4.1 relay: 39-42.5 Mbps per 4 MB transfer alone, ~40 Mbps each with 2 and with 4 at once (157-162 Mbps aggregate), no packets dropped.",
+   "severity": "info"
+  }
+ ],
+ "limitations": [
+  "Not every difference to campaign 4 is iroh's: the CLI and library changed in 30 commits since campaign 4 (closed networks with registry and membership certificates, security fixes such as bounded handshakes and registry answers, stricter certificate and record parsing, store and listener fixes, and two bench changes, see bench_settings), and this machine was reinstalled without a firewall. The debug runs separate the ones that showed up (ufw-emul, shutdown-logs); everything else stayed the same, so no attribution was needed.",
+  "The lab's relay is 1.5.0, the real relay 1.4.1: relayed lab paths test 1.5.0 clients with a 1.5.0 relay, everything through p2p-relay1 1.5.0 clients with a 1.4.1 relay. A 1.5.0 public relay was not tested.",
+  "3 runs per scenario (4-8 for the parallel relay runs): percentiles over runs are rough. The lossy-link statistics come from 13 runs (3 campaign + 10 debug, not in summary.json).",
+  "The verdict classification is ours (summarize.py), per run by its worst finding. A transfer_failed issue is not checked against what the listener received; debug/lossy-extra run 5's is misleading (the listener got everything 0.9 s later), but debug runs are not classified.",
+  "The packet_loss window holds 108-145 packets: at 1 % random loss about one window in three shows no loss.",
+  "The lab NATs are Linux conntrack + nftables with port preservation; one relay per scenario, so hard_nat (two relays) was never exercised.",
+  "No rate limits in the lab and fixed transfer sizes (10 MB direct, 4 MB relayed): throughput numbers show slow start for those sizes, not capacity.",
+  "Real world: one location (Helsinki), no firewall on this machine any more (ufw emulated only in debug/ufw-emul), per-flow routes of ~34 or ~37.5 ms between puppet's host and Hetzner.",
+  "--idle cannot show NAT mapping expiry: iroh keeps every path alive every 5 s and the lab's shortest mapping timeout is 5 s.",
+  "QUIC loss is counted only for packets the bench node sent; IPv4 only inside the lab.",
+  "Runs were sequential, but puppet's host also carries other services (its testnet listener and public relay, idle); their load was not controlled."
+ ],
+ "comparison": [
+  {
+   "title": "iroh 1.4.1 -> 1.5.0 (fork with relay recovery fixes): nothing measurable changed.",
+   "detail": "Same outcome in every scenario whose environment did not change, 0 connections lost, QUIC counters in 93/93; lab RTT 40.4 / 80.6 ms, throughput ~123 / ~35 Mbps, connect/hole-punching and bind times identical, also with the lab's relay on 1.5.0; real-world numbers within the route clusters; the 1.4.1 real relay carried the 1.5.0 clients without drops. Verdicts 110 right / 1 misleading / 0 wrong runs, as in campaigns 3 and 4."
+  },
+  {
+   "title": "Three outcome changes (relay -> direct) are this machine's firewall:",
+   "detail": "rw-symmetric-to-ufw, rw-ufw-to-easy and rw-ufw-to-symmetric go direct, and rw-easy-to-ufw is direct from the first packet, because the reinstalled build machine has no ufw; final paths 60 direct / 33 relay (was 51 / 42). With ufw's filtering emulated on the same build (debug/ufw-emul, 12 runs) campaign 4's outcomes come back exactly."
+  },
+  {
+   "title": "Faster binds and no slow downloads on this machine:",
+   "detail": "load < 0.4 (campaign 4: 24-49 from other sessions): startup-hetzner binds 667 -> 588 ms, relay-single 584 -> 507 ms; no slow Hetzner -> lab download (campaign 4: 3). The regression flag on rw-open-to-easy RTT (33.8 -> 37.3 ms) is the route cluster."
+  },
+  {
+   "title": "New: ERROR/WARN log lines at endpoint shutdown (iroh fork),",
+   "detail": "in 41 % of process exits (84 of 204; 'relay_recv_channel closed', 'All transports failed to receive'), only during close, no functional effect. Local repro: 0/30 with iroh 1.4.1 and with upstream main, 7/30 with the fork rev: from its relay-recovery commit (relay actors end before the QUIC endpoint stops polling). To fix in the fork/upstream PR."
+  },
+  {
+   "title": "Lossy link:",
+   "detail": "packet_loss 9/13 and relay_compare ok 13/13 as in campaign 4; concurrency measured 13/13, 1 restart (was 2), cut-off requests now cancelled on the wire (late requests at the listener: 2/13 runs, <= 0.1 s; campaign 4: 7/13, up to 3.9 s); one upload whose count came 0.9 s after the bench stopped waiting (exit 5, debug run): bench bug, fixed in cda49ae."
+  }
+ ],
+ "comparison_series": [
+  {
+   "title": "Verdict runs right / misleading / wrong: 81 / 28 / 2 -> 88 / 23 / 0 -> 110 / 1 / 0 -> 110 / 1 / 0 -> 110 / 1 / 0.",
+   "detail": "Checks 229 / 41 / 2 -> 252 / 24 / 0 -> 254 / 1 / 0 -> 254 / 1 / 0 -> 251 / 1 / 0 (three relayed real-world scenarios are direct now and have fewer checks). What remains since campaign 3 is one sampling miss of 1 % loss in 3 runs."
+  },
+  {
+   "title": "Outcomes: final direct / relay / failed 49 / 42 / 2 -> 51 / 42 / 0 -> 51 / 42 / 0 -> 51 / 42 / 0 -> 60 / 33 / 0; lost connections 2 -> 0 -> 0 -> 0 -> 0.",
+   "detail": "The direct/relay outcome of every scenario is the same in all five campaigns except the three *-ufw real-world scenarios in campaign 5, whose firewall is gone (confirmed by debug/ufw-emul); campaign 1's failures were the lossy link's connections closed after request timeouts."
+  },
+  {
+   "title": "Lossy link across the campaigns:",
+   "detail": "campaign 1: connection closed in 2/3, loss hint 0/3; campaign 2: survives 3/3, relay_fallback_failed 2/3; campaign 3: survives, relay fallback ok 13/13, loss hint 11/13, one upload failed by a race; campaign 4: healthy 13/13, loss hint 9/13, concurrency 13/13 (2 restarts); campaign 5: loss hint 9/13, concurrency 13/13 (1 restart, cut-off requests cancelled), healthy 12/13 (one upload count given up too early, fixed afterwards)."
+  },
+  {
+   "title": "Measurements stable across iroh 1.4.1 -> 1.5.0:",
+   "detail": "lab RTT 40.4 / 80.6 ms and throughput ~123 / ~35 Mbps direct / relayed in all five campaigns; real-world RTT and throughput vary with the ~34 / ~37.5 ms route clusters; slow Hetzner -> lab downloads in 1 / 0 / 2 / 3 / 0 runs; no drops at the real relay."
+  }
+ ]
+}

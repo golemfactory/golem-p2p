@@ -40,7 +40,10 @@ campaign 2 and its comparison with campaign 1: [results/2026-11-07-campaign2/](r
 campaigns 1-3 side by side (`compare3.md`):
 [results/2026-11-08-campaign3/](results/2026-11-08-campaign3/); campaign 4,
 its comparison with campaign 3 (`compare.md`) and campaigns 1-4 side by side
-(`compare4.md`): [results/2026-11-08-campaign4/](results/2026-11-08-campaign4/).
+(`compare4.md`): [results/2026-11-08-campaign4/](results/2026-11-08-campaign4/);
+campaign 5 (iroh 1.5.0), its comparison with campaign 4 (`compare.md`) and
+campaigns 1-5 side by side (`compare5.md`):
+[results/2026-11-15-campaign5/](results/2026-11-15-campaign5/).
 
 ## Requirements
 

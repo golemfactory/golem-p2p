@@ -1,0 +1,6 @@
+built from: 656d229 at 2026-11-15T11:35:19Z
+local: golem-p2p-cli 0.1.0, sha256 cc4a151ba7261544a2cb7b7d27f9adac1f2b69c651570ac9a2399e6c6bbb6544
+lab:   golem-p2p-cli 0.1.0 cc4a151ba7261544a2cb7b7d27f9adac1f2b69c651570ac9a2399e6c6bbb6544  bin/golem-p2p 656d229 2026-11-15T11:35:16Z iroh-relay 1.5.0 sha256:a5150e2790966829c7a91a8793e6ca10c0f8abee55cc9e84d751763ae27f75c2 
+lab relay: iroh-relay 1.5.0 a5150e2790966829c7a91a8793e6ca10c0f8abee55cc9e84d751763ae27f75c2  bin/iroh-relay 
+real relay (https://213.163.75.157:56000 on p2p-relay1): iroh-relay 1.4.1 9b9804c768503f3b4840ee011c1c796c26683d0f2496c9d29a2ab3c3bcac71b3  /usr/local/bin/iroh-relay ActiveEnterTimestamp=Sat 2026-11-14 21:27:13 UTC MainPID=3250 
+relay VM directory: copied from the local binary whenever it starts (start_directory)

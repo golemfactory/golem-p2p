@@ -1,0 +1,11 @@
+2026-11-15T12:12:41.542023Z  INFO golem_p2p::endpoint: golem-p2p endpoint bound node_id=0x4cbd889337642060450661d8fee7b4f171c08938 endpoint_id=5c6b57b1d5
+2026-11-15T12:12:56.457568Z ERROR iroh::socket::transports::relay: relay_recv_channel closed
+2026-11-15T12:12:56.457601Z ERROR iroh::socket::transports::relay: relay_recv_channel closed
+2026-11-15T12:12:56.457607Z ERROR iroh::socket::transports::relay: relay_recv_channel closed
+2026-11-15T12:12:56.457610Z ERROR iroh::socket::transports::relay: relay_recv_channel closed
+2026-11-15T12:12:56.457613Z ERROR iroh::socket::transports::relay: relay_recv_channel closed
+2026-11-15T12:12:56.457617Z ERROR iroh::socket::transports::relay: relay_recv_channel closed
+2026-11-15T12:12:56.457620Z ERROR iroh::socket::transports::relay: relay_recv_channel closed
+2026-11-15T12:12:56.457623Z ERROR iroh::socket::transports::relay: relay_recv_channel closed
+2026-11-15T12:12:56.457628Z  WARN iroh::socket::transports: All transports failed to receive. QUIC endpoint will be shutdown.
+2026-11-15T12:12:56.457637Z ERROR noq::endpoint: I/O error: All transports failed to receive

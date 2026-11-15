@@ -1,0 +1,4 @@
+p2p-hostnat: lab VM 10.167.138.10 profile full-cone (udp timeout 120s), relay VM 10.167.138.20 ports 56000-56099
+p2p-hostnat: conntrack entries of 10.167.138.10 flushed
+LAB_PROFILE=full-cone
+== full-cone 2026-11-15T12:37:37Z

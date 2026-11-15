@@ -1,0 +1,4 @@
+p2p-hostnat: lab VM 10.167.138.10 profile port-restricted (udp timeout 120s), relay VM 10.167.138.20 ports 56000-56099
+p2p-hostnat: conntrack entries of 10.167.138.10 flushed
+LAB_PROFILE=port-restricted
+== port-restricted 2026-11-15T12:30:45Z

@@ -1,0 +1,7 @@
+{
+ "bench_args": "--relay https://213.163.75.157:56000,quic=56001 --directory http://213.163.75.157:56050/ --to 0x9357a7a940796781bc0d421818033083a66c391a --bind 0.0.0.0:56095",
+ "bencher": "hetzner",
+ "listener": "real1",
+ "run": "ufw-emul-rw-ufw-to-easy-r1",
+ "to": "0x9357a7a940796781bc0d421818033083a66c391a"
+}
