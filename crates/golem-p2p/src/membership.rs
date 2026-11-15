@@ -167,10 +167,16 @@ impl MembershipCert {
         if bytes.len() > MAX_CERT_SIZE {
             return Err(MembershipError::Malformed("too large"));
         }
-        let wire: CertWire =
-            postcard::from_bytes(bytes).map_err(|_| MembershipError::Malformed("encoding"))?;
-        let payload: CertPayload = postcard::from_bytes(&wire.payload)
-            .map_err(|_| MembershipError::Malformed("payload encoding"))?;
+        // Trailing bytes are refused, as in records: one certificate, one
+        // encoding.
+        let wire: CertWire = match postcard::take_from_bytes(bytes) {
+            Ok((wire, [])) => wire,
+            _ => return Err(MembershipError::Malformed("encoding")),
+        };
+        let payload: CertPayload = match postcard::take_from_bytes(&wire.payload) {
+            Ok((payload, [])) => payload,
+            _ => return Err(MembershipError::Malformed("payload encoding")),
+        };
         if payload.version != CERT_VERSION {
             return Err(MembershipError::Version(payload.version));
         }

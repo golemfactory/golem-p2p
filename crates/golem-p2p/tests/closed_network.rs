@@ -415,6 +415,10 @@ async fn certificate_checks() {
     let n = bytes.len();
     bytes[n - 1] ^= 1;
     assert!(MembershipCert::decode(&bytes).is_err());
+    // Nor does one with bytes appended: one certificate, one encoding.
+    let mut bytes = ok.to_bytes().to_vec();
+    bytes.push(0);
+    assert!(MembershipCert::decode(&bytes).is_err());
 }
 
 /// An in-process registry for timing tests: issues certificates for any
