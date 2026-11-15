@@ -655,3 +655,72 @@ async fn extreme_expiry_rejected_without_panic() {
     })
     .await;
 }
+
+/// Rejected handshakes do not hold the victim's handshake slots while it
+/// waits for the dialer to close. Peers that send an invalid Hello and then
+/// keep the connection open used to hold one of the 128 slots for 2 s each,
+/// so about 64 cheap connections per second refused everyone else.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn rejected_handshakes_do_not_hold_handshake_slots() {
+    with_timeout(60, async {
+        let net = TestNet::new(0).await;
+        let signer = InMemorySigner::new();
+        let (v, p_id) = (signer.generate(), signer.generate());
+        let victim = net.node(&signer, Identities::new(v), direct()).await;
+        spawn_echo(&victim);
+
+        // More invalid Hellos than there are slots, all at once, from
+        // connections that stay open.
+        let key = SecretKey::generate();
+        let attacker = raw_endpoint(key.clone()).await;
+        let addr = victim.local_record().endpoint_addr();
+        let invalid_hello = || async {
+            // None if the victim refused the connection.
+            let conn = attacker.connect(addr.clone(), ALPN).await.ok()?;
+            let (mut send, mut recv) = conn.open_bi().await.ok()?;
+            send.write_all(&[KIND_CONTROL]).await.ok()?;
+            let hello = Control::Hello {
+                record: vec![0; 16],
+                target: Some(v),
+            };
+            wire::write_frame(&mut send, &hello).await.ok()?;
+            let reply = wire::read_frame::<Control>(&mut recv, wire::MAX_CONTROL_FRAME)
+                .await
+                .ok();
+            Some((reply, conn))
+        };
+        let replies = n0_future::join_all((0..160).map(|_| invalid_hello())).await;
+        let rejected = replies
+            .iter()
+            .flatten()
+            .filter(|(r, _)| {
+                matches!(
+                    r,
+                    Some(Control::Reject {
+                        reason: RejectReason::InvalidRecord
+                    })
+                )
+            })
+            .count();
+        assert!(rejected > 0, "no Hello was rejected");
+
+        // Right after (well within the 2 s a rejected dialer may linger), no
+        // slot is held, and a real peer gets through.
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
+        while victim.stats().handshakes > 0 && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let stats = victim.stats();
+        assert_eq!(stats.handshakes, 0, "{stats:?}");
+        let peer = net.node(&signer, Identities::new(p_id), direct()).await;
+        let reply = tokio::time::timeout(Duration::from_secs(1), peer.request(v, b"hi")).await;
+        assert!(matches!(reply, Ok(Ok(_))), "{reply:?}");
+
+        drop(replies);
+        attacker.close().await;
+        for ep in [victim, peer] {
+            ep.close().await;
+        }
+    })
+    .await;
+}

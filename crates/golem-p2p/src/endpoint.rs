@@ -1368,9 +1368,15 @@ struct OpenStream {
 async fn reject(conn: &IrohConnection, send: &mut SendStream, reason: RejectReason, code: VarInt) {
     let _ = wire::write_frame(send, &Control::Reject { reason }).await;
     let _ = send.finish();
-    // Give the dialer a moment to read the reason before closing.
-    let _ = tokio::time::timeout(Duration::from_secs(2), conn.closed()).await;
-    conn.close(code, b"rejected");
+    // Give the dialer a moment to read the reason before closing. Not in the
+    // handshake itself: a dialer that never closes would hold a handshake
+    // slot for that time, and a few dozen of them per second would keep
+    // everyone else out.
+    let conn = conn.clone();
+    tokio::spawn(async move {
+        let _ = tokio::time::timeout(Duration::from_secs(2), conn.closed()).await;
+        conn.close(code, b"rejected");
+    });
 }
 
 async fn accept_loop(inner: Arc<Inner>) {
