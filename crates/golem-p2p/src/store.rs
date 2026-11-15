@@ -15,6 +15,8 @@
 //!   resolve, even though their older record is still signed and unexpired.
 //!   When the newer record leaves the store (evicted or expired), the
 //!   withdrawn identities' entries go with it, so they cannot resolve again.
+//!   An identity resolves to the newest stored record of its endpoint, even
+//!   if its own entry is older (evicted, then an older record replayed).
 //! * The number of stored entries is bounded. When full, expired entries are
 //!   dropped first, then the entries that expire soonest (1 % of the capacity
 //!   at once, so that a full store does not scan all entries on every
@@ -220,10 +222,16 @@ impl RecordStore {
         if rec.is_expired_at(now) {
             return None;
         }
+        // The endpoint's newest record decides: it withdraws the identity,
+        // or it is the record to use. (The identity's entry can be older
+        // when it was evicted and an older record was replayed since.)
         if let Some(latest) = inner.by_endpoint.get(&rec.endpoint_id())
-            && withdraws(latest, rec, id)
+            && latest.seq() > rec.seq()
         {
-            return None;
+            if withdraws(latest, rec, id) || latest.is_expired_at(now) {
+                return None;
+            }
+            return Some(latest.clone());
         }
         Some(rec.clone())
     }
@@ -436,6 +444,31 @@ mod tests {
             "r2 was not evicted"
         );
         assert!(store.resolve(&a).is_none());
+    }
+
+    #[tokio::test]
+    async fn replay_does_not_roll_back_an_evicted_identity_entry() {
+        // The endpoint's newest record r3 lists a and b. When the entry of
+        // one of them is evicted and an older record listing it (with older
+        // addresses) is replayed, it must resolve to r3.
+        let s = InMemorySigner::new();
+        let (a, b) = (s.generate(), s.generate());
+        let mut n = Node::new(&s);
+        let older_a = n.record(&[a], 600).await;
+        let older_b = n.record(&[b], 600).await;
+        let r3 = n.record(&[a, b], 600).await;
+        let store = RecordStore::new(4);
+        store.insert(&r3);
+        let x: Vec<_> = (0..3).map(|_| s.generate()).collect();
+        store.insert(&Node::new(&s).record(&x, 3600).await);
+        let (evicted, older) = match (store.resolve(&a), store.resolve(&b)) {
+            (None, Some(_)) => (a, older_a),
+            (Some(_), None) => (b, older_b),
+            other => panic!("expected one of a and b evicted: {other:?}"),
+        };
+        assert_eq!(store.by_endpoint(&n.key.public()), Some(r3.clone()));
+        assert_eq!(store.insert(&older), InsertOutcome::Updated);
+        assert_eq!(store.resolve(&evicted), Some(r3));
     }
 
     #[tokio::test]

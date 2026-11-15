@@ -343,7 +343,9 @@ dial every address it lists.
   identities do not resolve, although their older record is still validly
   signed. When the newer record leaves the store (evicted or expired), the
   withdrawn identities' entries are dropped with it; otherwise they would
-  resolve again.
+  resolve again. An identity resolves to the newest stored record of its
+  endpoint, also when its own entry is older (evicted, then an older record
+  replayed), so a replay cannot bring back old addresses.
 * Nothing pins an identity to an endpoint. A newer record for the same
   identity always replaces the previous binding, which is how restarts with a
   new endpoint key and default switches propagate.
