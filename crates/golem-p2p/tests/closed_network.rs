@@ -419,6 +419,30 @@ async fn certificate_checks() {
     let mut bytes = ok.to_bytes().to_vec();
     bytes.push(0);
     assert!(MembershipCert::decode(&bytes).is_err());
+    // Times at the end of the u64 range (any key can sign such a
+    // certificate) are expired, and reading them does not panic.
+    let far = MembershipCert::issue(
+        payload("net", *endpoint.as_bytes(), u64::MAX, u64::MAX),
+        &key,
+    );
+    let far = MembershipCert::decode(far.to_bytes()).unwrap();
+    assert!(far.expires_at() > SystemTime::now() && far.issued_at() > SystemTime::now());
+    assert_eq!(
+        policy.check_cert(&far, endpoint, now),
+        Err(MembershipError::Expired)
+    );
+}
+
+/// The registry state's Debug output does not show the signing key.
+#[test]
+fn registry_state_debug_hides_the_key() {
+    let (state, _admin) = RegistryState::init("net", Duration::from_secs(3600)).unwrap();
+    let json: serde_json::Value = serde_json::to_value(&state).unwrap();
+    let key = json["secret_key"].as_str().unwrap();
+    assert_eq!(key.len(), 64);
+    let debug = format!("{state:?}");
+    assert!(!debug.contains(key), "{debug}");
+    assert!(debug.contains("net"));
 }
 
 /// An in-process registry for timing tests: issues certificates for any

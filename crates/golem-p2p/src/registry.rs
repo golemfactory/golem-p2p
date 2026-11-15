@@ -69,8 +69,9 @@ mod server {
     /// Longest account name.
     pub const MAX_ACCOUNT_NAME: usize = 64;
 
-    /// The registry's persistent state (one JSON file, mode 0600).
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    /// The registry's persistent state (one JSON file, mode 0600). Its
+    /// `Debug` output leaves out the signing key.
+    #[derive(Clone, Serialize, Deserialize)]
     pub struct RegistryState {
         /// Network name, part of every certificate.
         pub network: String,
@@ -85,6 +86,18 @@ mod server {
         /// Registered node IDs (`0x..`, lowercase) and the account that owns
         /// each.
         pub nodes: BTreeMap<String, String>,
+    }
+
+    impl std::fmt::Debug for RegistryState {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("RegistryState")
+                .field("network", &self.network)
+                .field("secret_key", &"<hidden>")
+                .field("cert_lifetime_s", &self.cert_lifetime_s)
+                .field("accounts", &self.accounts)
+                .field("nodes", &self.nodes)
+                .finish_non_exhaustive()
+        }
     }
 
     /// An account.

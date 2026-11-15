@@ -134,6 +134,13 @@ fn secs(t: SystemTime) -> u64 {
     t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
+/// `secs` after the Unix epoch. Saturates at about 4,000 years, where no
+/// platform's `SystemTime` overflows: the times of a decoded certificate are
+/// unchecked input, and `UNIX_EPOCH + Duration::from_secs(u64::MAX)` panics.
+fn at(secs: u64) -> SystemTime {
+    UNIX_EPOCH + Duration::from_secs(secs.min(1 << 37))
+}
+
 fn digest(payload: &[u8]) -> Vec<u8> {
     let mut m = Vec::with_capacity(CERT_DOMAIN.len() + payload.len());
     m.extend_from_slice(CERT_DOMAIN);
@@ -212,14 +219,15 @@ impl MembershipCert {
         &self.bytes
     }
 
-    /// Expiry time.
+    /// Expiry time (saturating some thousand years from now; a certificate
+    /// is only checked by [`MembershipPolicy::check_cert`]).
     pub fn expires_at(&self) -> SystemTime {
-        UNIX_EPOCH + Duration::from_secs(self.payload.expires_at)
+        at(self.payload.expires_at)
     }
 
-    /// Issue time.
+    /// Issue time (saturating like [`Self::expires_at`]).
     pub fn issued_at(&self) -> SystemTime {
-        UNIX_EPOCH + Duration::from_secs(self.payload.issued_at)
+        at(self.payload.issued_at)
     }
 
     /// Returns `true` if the certificate covers every identity in `ids`.
