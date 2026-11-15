@@ -98,12 +98,22 @@ shows as `ADF`):
 | service | URL | state |
 |---|---|---|
 | iroh relay 1.4.1, lab (`p2p-relay1`) | `https://213.163.75.157:56000,quic=56001` + `--relay-ca` (self-signed, below) | up since 2026-11-14, systemd `iroh-relay`, metrics on the VM at `127.0.0.1:9090`; for `harness/` |
-| iroh relay 1.4.1, public (`p2p-relay1`) | `https://puppet.golemp2p.arkiv-global.net:56002,quic=56003`, no `--relay-ca` | up since 2026-11-14, systemd `iroh-relay-public`, metrics `127.0.0.1:9091`; Let's Encrypt certificate (HTTP-01 on the host, renewed by certbot, a deploy hook pushes it into the VM and restarts only this relay); for third-party testers |
+| iroh relay **1.5.0**, public (`p2p-relay1`) | `https://puppet.golemp2p.arkiv-global.net:56002,quic=56003`, no `--relay-ca` | up since 2026-11-14, systemd `iroh-relay-public`, metrics `127.0.0.1:9091`; Let's Encrypt certificate (HTTP-01 on the host, renewed by certbot, a deploy hook pushes it into the VM and restarts only this relay); for third-party testers |
 | golem-p2p directory (`p2p-relay1`) | `http://213.163.75.157:56050/` | per run (`realworld.sh` starts and stops it) |
-| NAT lab (`p2p-natlab`) | `~/golem-p2p-lab` | deployed `8e4c3cb`; `lab.sh up selftest` + `selftest`: 8 of 8 pass; lab down between runs |
+| NAT lab (`p2p-natlab`) | `~/golem-p2p-lab` | deployed by master: `ff6fcd1` with the lab's own iroh-relay 1.5.0 (2026-11-15); `8e4c3cb` passed `selftest` 8 of 8 here; lab down between runs |
 
-The relay binary (both relays) is the musl release (sha256 `9b9804c7…ac71b3`, the same as
-in `harness/lab/RESULTS.md`). The lab relay's certificate is new (older copies of
+Relay binaries on `p2p-relay1`, separate so the two relays can run different
+versions:
+
+* lab relay (`:56000`): `/usr/local/bin/iroh-relay`, 1.4.1 musl release
+  (sha256 `9b9804c7…ac71b3`, the same as in `harness/lab/RESULTS.md`). Kept on
+  1.4.1 on purpose: the campaigns compare against it (1.4.1 relay, 1.5.0
+  clients). Switching it is announced in `comms/` first.
+* public relay (`:56002`): `/usr/local/bin/iroh-relay-public`, 1.5.0 since
+  2026-11-15, built here with Rust 1.96.0 from the golemfactory/iroh fork rev
+  `4ad24ac2` (`cargo install --git ... --rev ... iroh-relay --features server
+  --locked`), stripped, sha256 `4c932a5c…100d0d72`. Same version and
+  source as the lab's own relay on `p2p-natlab`. The lab relay's certificate is new (older copies of
 `p2p-relay1.crt` no longer verify), self-signed, valid until 2029-11-13; use
 it as `--relay-ca` and as `~/.ssh/p2p/p2p-relay1.crt` for the harness scripts. SHA-256 fingerprint
 `0B:F5:F0:40:02:DD:4E:47:37:26:E3:27:D0:05:C4:30:32:65:BC:FF:09:91:69:E9:C1:0D:60:50:9E:BB:9C:D1`:
@@ -137,7 +147,7 @@ the host, its relays, `p2p-hostnat` or the VMs was changed.
 | | |
 |---|---|
 | service | systemd `golem-p2p-testnet-listen` on the host (not in a VM): `golem-p2p listen` (echo and bulk) in network `golem-testnet`, relay `https://puppet.golemp2p.arkiv-global.net:56002,quic=56003`, hardened unit (`ProtectSystem=strict`, `ProtectHome=read-only`, no capabilities) |
-| binary | `/usr/local/bin/golem-p2p`, built on master from `577df97` |
+| binary | `/usr/local/bin/golem-p2p`, deployed by master on 2026-11-15: iroh 1.5.0 build, sha256 `cc4a151b…6bb6544` (as in `nodes/master.md`) |
 | node ID | `0x03b31e0e661ef73f64c8710b8486518198e81c18` (key `~/golem-p2p-testnet/listen.key`, mode 0600) |
 | account | `puppet`; token in `~/golem-p2p-testnet/puppet.token` (mode 0600, directory 0700). Registered: the listener and `0xdf54c6809fa776a3a0d11668d61ccd4330fddf76` (`client.key`, for `send` tests) |
 | outsider | `~/golem-p2p-testnet/outsider.key` (`0x0fc81f1d…`), deliberately not registered, for refusal tests |
