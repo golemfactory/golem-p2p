@@ -71,12 +71,22 @@ every node, so it needs a backup off the host (not done yet).
 | `puppet` | `0x03b31e0e661ef73f64c8710b8486518198e81c18` (puppet's testnet node, see `nodes/puppet.md`), `0xdf54c6809fa776a3a0d11668d61ccd4330fddf76` (its `client.key`) |
 
 All units are hardened (`ProtectSystem=strict`, `ProtectHome`, no
-capabilities, `UMask=0077`). nginx limits the registry to 10 requests/s per
+capabilities, `UMask=0077`; `systemd-analyze security`: 3.0-3.1 "OK"). The
+registry logs every issued certificate (`journalctl -u golem-p2p-registry`). nginx limits the registry to 10 requests/s per
 client address (bursts of 100, then `429`, which nodes retry). The directory
 keeps records in memory only: after a restart of `golem-p2p-directory`,
 restart the nodes too (or wait up to 20 min until they republish).
 
 ## Checks from here
+
+2026-11-15, testnet (details in `comms/2026-11-15-master-testnet-selftest.md`):
+members master <-> puppet both ways, direct and `--relay-only` (33-37 ms);
+outsiders refused; `probe --bulk 50M` master -> puppet 216 Mbit/s direct;
+a 28 s registry outage did not disturb a live connection (50 of 50 echoes),
+while a node started during it failed with `registry unavailable`;
+renewal and expiry with 60 s certificates as designed; both long-lived
+nodes renewed their 1 h certificates 30 min after start (00:12:47 and
+00:12:53 UTC).
 
 2026-11-14, `golem-p2p bench` (local check) against puppet's relay
 `https://213.163.75.157:56000,quic=56001` with the certificate from
@@ -89,5 +99,5 @@ and IPv6.
 
 * Ubuntu 26.04 LTS, kernel 7.0, 32 CPUs, 62 GB RAM, 3.5 TB disk.
 * Rust 1.100 (default) and 1.96.0 (the toolchain CI pins).
-* `/usr/local/bin/golem-p2p` built from `f25db17` (the same binary on puppet's host).
+* `/usr/local/bin/golem-p2p` built from `577df97` (the same binary on puppet's host).
 * Docker runs here; its bridge addresses are not reachable from outside.
