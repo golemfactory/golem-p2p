@@ -1,10 +1,26 @@
 name: Security scan · Haiku
-run-name: Small Haiku scan · ${{ github.ref_name }} · @${{ github.actor }}
+run-name: Haiku scan · ${{ inputs.scope }} · ${{ github.ref_name }} · @${{ github.actor }}
 
 # Deliberately manual-only: no push, pull_request, or scheduled API spending.
+# Budget: one request per area, at most $0.056 per run (all areas, thinking);
+# see harness/security-scan.md.
 on:
   workflow_dispatch:
     inputs:
+      scope:
+        description: Area to review (all = one request per area)
+        type: choice
+        options: [records, handshake, closed-network, cli-servers, all]
+        default: records
+      thinking:
+        description: Haiku thinking effort (off is cheapest)
+        type: choice
+        options: ["off", low, medium]
+        default: "off"
+      source_ref:
+        description: Review the sources of this git revision instead (empty = the selected branch)
+        type: string
+        default: ""
       publish_pages:
         description: Publish to Pages (requires repository Pages setup)
         type: boolean
@@ -18,15 +34,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  checks:
+    name: Deterministic checks
+    # No secrets are passed; the results come back as artifacts. The ./
+    # form, not $/: actionlint 1.7.12 does not know the newer syntax.
+    uses: ./.github/workflows/security.yml # zizmor: ignore[self-repository]
+
   scan:
     name: Scan and render report
+    needs: checks
+    # Findings of the deterministic checks do not stop the review.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     # The API key belongs in this environment's secrets, where an admin can
     # limit it to main and add reviewers (docs/security-checks.md).
     environment: security-scan
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       PYTHONDONTWRITEBYTECODE: "1"
+      SCOPE: ${{ inputs.scope }}
+      THINKING: ${{ inputs.thinking }}
+      SOURCE_REF: ${{ inputs.source_ref }}
     steps:
       - name: Prepare report directory
         run: echo "REPORT_DIR=$RUNNER_TEMP/security-scan" >> "$GITHUB_ENV"
@@ -34,7 +62,16 @@ jobs:
       - name: Check out selected revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # All history, for source_ref.
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Collect deterministic check results
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: security-checks-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/security-checks
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
@@ -49,30 +86,41 @@ jobs:
           python -m pip install --disable-pip-version-check --require-hashes
           --only-binary :all: -r harness/security-scan-requirements.txt
 
-      - name: Check renderer with synthetic data
-        run: python -m unittest discover -s harness -p 'test_render_security_report.py'
+      - name: Check scanner and renderer with synthetic data
+        run: python -m unittest discover -s harness -p 'test_*security*.py'
 
       - name: Record scope and budget (no API call)
         id: plan
         run: |
           mkdir -p "$REPORT_DIR"
-          python harness/security_scan.py --dry-run > "$REPORT_DIR/scan-plan.json"
+          cat "$RUNNER_TEMP"/security-checks/*.jsonl > "$REPORT_DIR/checks.jsonl" 2>/dev/null || true
+          args=(--scope "$SCOPE" --thinking "$THINKING" --checks "$REPORT_DIR/checks.jsonl")
+          [ -z "$SOURCE_REF" ] || args+=(--source-ref "$SOURCE_REF")
+          python harness/security_scan.py --dry-run "${args[@]}" > "$REPORT_DIR/scan-plan.json"
 
-      - name: Run one bounded Haiku review
+      - name: Run the bounded Haiku review
         id: scan
-        timeout-minutes: 3
+        timeout-minutes: 10
         env:
           ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_API_KEY_SCX }}
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then
-            echo "::error::Repository secret CLAUDE_API_KEY_SCX is missing or unavailable."
+            echo "::error::Secret CLAUDE_API_KEY_SCX is missing or unavailable."
             exit 1
           fi
-          python harness/security_scan.py --output "$REPORT_DIR/report.json"
+          args=(--scope "$SCOPE" --thinking "$THINKING" --checks "$REPORT_DIR/checks.jsonl")
+          [ -z "$SOURCE_REF" ] || args+=(--source-ref "$SOURCE_REF")
+          python harness/security_scan.py "${args[@]}" --output "$REPORT_DIR/report.json"
 
       - name: Render HTML and embedded summary
         id: render
+        # Also after a partly failed scan: the report says which areas failed.
+        if: ${{ !cancelled() && steps.plan.outcome == 'success' }}
         run: |
+          if [ ! -f "$REPORT_DIR/report.json" ]; then
+            echo "::error::The scan wrote no report."
+            exit 1
+          fi
           python harness/render_security_report.py "$REPORT_DIR/report.json"
           python harness/render_security_report.py "$REPORT_DIR/report.json" --format github
 
@@ -114,7 +162,10 @@ jobs:
               ("Scan", os.environ["SCAN_OUTCOME"]),
               ("HTML", os.environ["RENDER_OUTCOME"]),
               ("Model", plan.get("model", "Unavailable")),
+              ("Scope", plan.get("scope_name", "Unavailable")),
+              ("Thinking", plan.get("thinking", "Unavailable")),
               ("Commit", plan.get("git_head", os.environ["GITHUB_SHA"])),
+              ("Source", f'{plan.get("source", "Unavailable")} ({plan.get("source_commit", "")[:12]})'),
               ("Source files", len(plan.get("scope", []))),
               ("Input token limit", plan.get("input_token_limit", "Unavailable")),
               ("Output token limit", plan.get("output_token_limit", "Unavailable")),
@@ -124,7 +175,7 @@ jobs:
               ("Estimated cost", dollars(report.get("estimated_actual_usd"))),
               ("Configured maximum estimate", dollars(plan.get("estimated_max_usd"))),
           ]
-          lines = ["## Small Haiku security scan", "", "| Run detail | Value |", "| --- | --- |"]
+          lines = ["## Haiku security scan", "", "| Run detail | Value |", "| --- | --- |"]
           lines += [f"| {label} | {value} |" for label, value in rows]
           if os.environ["ARTIFACT_URL"]:
               lines += ["", f"[Download reports]({os.environ['ARTIFACT_URL']})", "",

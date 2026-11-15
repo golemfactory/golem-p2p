@@ -66,6 +66,35 @@ class RenderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             render_report({"review": {"summary": "Example", "findings": [{}], "limitations": []}})
 
+    def test_deterministic_checks_and_areas_are_rendered_as_text(self):
+        payload = '<script>example()</script>'
+        report = {
+            "status": "partial_unvalidated_model_review",
+            "areas": [{"area": payload, "files": ["a.rs"], "status": "completed", "findings": 0,
+                       "usage": {"input_tokens": 10, "output_tokens": 5}},
+                      {"area": "handshake", "files": [], "status": "failed: " + payload}],
+            "deterministic_checks": [
+                {"title": "cargo deny", "command": payload, "exit_code": 0,
+                 "last_line": "advisories ok", "output_tail": payload},
+                {"title": "gitleaks", "command": "gitleaks git", "exit_code": 1,
+                 "last_line": payload, "output_tail": ""},
+                {"title": "zizmor (auditor)", "command": "zizmor", "exit_code": 14,
+                 "informational": True, "last_line": "", "output_tail": ""},
+            ],
+            "review": {"summary": "s", "findings": [], "limitations": []},
+        }
+        for document in (render_report(report), render_github_summary(report)):
+            self.assertNotIn("script", Tags(document).tags)
+            self.assertIn("Deterministic checks", document)
+            self.assertIn("advisories ok", document)
+            self.assertIn("FAILED", document)
+            self.assertIn("findings (informational)", document)
+            self.assertIn("Areas reviewed", document)
+        self.assertIn("Deterministic checks", render_github_summary(
+            {"status": "generation_failed", "deterministic_checks": report["deterministic_checks"]}))
+        with self.assertRaises(ValueError):
+            render_report({"status": "x", "deterministic_checks": [{"title": "t", "exit_code": "0"}]})
+
     def test_cli_does_not_log_findings_or_overwrite_files(self):
         marker = "SYNTHETIC_REPORT_CONTENT"
         with tempfile.TemporaryDirectory() as directory:

@@ -84,10 +84,61 @@ def validate_review(review):
             raise ValueError("Invalid source line")
 
 
+def check_rows(report):
+    """Deterministic check results carried in the report, validated."""
+    checks = report.get("deterministic_checks", [])
+    if not isinstance(checks, list):
+        raise ValueError("Invalid deterministic checks")
+    for item in checks:
+        if not isinstance(item, dict) or not isinstance(item.get("title"), str) \
+                or type(item.get("exit_code")) is not int:
+            raise ValueError("Invalid deterministic check")
+    return checks
+
+
+def check_result(item):
+    if item["exit_code"] == 0:
+        return "passed"
+    return "findings (informational)" if item.get("informational") is True else "FAILED"
+
+
+def area_rows(report):
+    areas = report.get("areas", [])
+    if not isinstance(areas, list) or not all(isinstance(a, dict) for a in areas):
+        raise ValueError("Invalid areas")
+    return areas
+
+
 def definition_list(items):
     return "<dl>" + "".join(
         f"<dt>{text(label)}</dt><dd>{text(value)}</dd>" for label, value in items
     ) + "</dl>"
+
+
+def github_context(report, inline):
+    """Areas reviewed and the deterministic checks, as compact tables."""
+    parts = []
+    areas = area_rows(report)
+    if areas:
+        parts.append('## Areas reviewed\n\n<table><thead><tr><th>Area</th><th>Files</th>'
+                     '<th>Status</th><th>Findings</th><th>Input / output tokens</th></tr></thead><tbody>')
+        for area in areas:
+            usage = area.get("usage") if isinstance(area.get("usage"), dict) else {}
+            parts.append(f'<tr><td>{inline(area.get("area", ""))}</td>'
+                         f'<td>{len(area.get("files", [])) if isinstance(area.get("files"), list) else ""}</td>'
+                         f'<td>{inline(area.get("status", ""))}</td>'
+                         f'<td align="center">{inline(area.get("findings", "—"))}</td>'
+                         f'<td>{inline(usage.get("input_tokens", "—"))} / {inline(usage.get("output_tokens", "—"))}</td></tr>')
+        parts.append('</tbody></table>\n\n')
+    checks = check_rows(report)
+    if checks:
+        parts.append('## Deterministic checks\n\n<table><thead><tr><th>Check</th><th>Result</th>'
+                     '<th>Last line of output</th></tr></thead><tbody>')
+        for item in checks:
+            parts.append(f'<tr><td>{inline(item["title"])}</td><td>{check_result(item)}</td>'
+                         f'<td><code>{inline(item.get("last_line", ""))}</code></td></tr>')
+        parts.append('</tbody></table>\n\n<p>Full output: the HTML report and the Security checks job summaries of this run.</p>\n\n')
+    return ''.join(parts)
 
 
 def render_github_summary(report):
@@ -95,15 +146,16 @@ def render_github_summary(report):
     if not isinstance(report, dict):
         raise ValueError("Report must be an object")
     review = report.get("review", report if "findings" in report else None)
-    if review is None:
-        if "status" not in report:
-            raise ValueError("Missing review or run status")
-        return "## Scan findings\n\nNo structured review available. This is not a zero-findings result.\n"
-    validate_review(review)
-
     def inline(value):
         # Blank lines can end a raw HTML block in GFM, so preserve them as tags.
         return text(value).replace('\r', '').replace('\n', '<br>')
+
+    if review is None:
+        if "status" not in report:
+            raise ValueError("Missing review or run status")
+        return (github_context(report, inline) +
+                "## Scan findings\n\nNo structured review available. This is not a zero-findings result.\n")
+    validate_review(review)
 
     def paragraph(value):
         return '<p>' + inline(value) + '</p>'
@@ -111,7 +163,7 @@ def render_github_summary(report):
     findings = review["findings"]
     counts = Counter(item["severity"] for item in findings)
     icons = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🔵"}
-    parts = ['## Scan findings\n\n<table><thead><tr>']
+    parts = [github_context(report, inline), '## Scan findings\n\n<table><thead><tr>']
     for severity in SEVERITIES:
         parts.append(f'<th>{icons[severity]} {severity.title()}</th>')
     parts.append('</tr></thead><tbody><tr>')
@@ -165,6 +217,10 @@ def render_report(report):
         ("Completed (UTC)", report.get("completed_at_utc", "Not supplied")),
         ("Git commit", report.get("git_head", "Not supplied")),
     ]
+    for key, label in (("source", "Source reviewed"), ("source_commit", "Source commit"),
+                       ("scope_name", "Scope"), ("thinking", "Thinking")):
+        if key in report:
+            metadata.append((label, report[key]))
     cost = report.get("estimated_actual_usd")
     if isinstance(cost, (int, float)) and not isinstance(cost, bool):
         metadata.append(("Estimated cost", f"${cost:.6f} USD"))
@@ -207,6 +263,31 @@ def render_report(report):
             parts.append('<ul>' + ''.join(f'<li class="text">{text(item)}</li>' for item in review["limitations"]) + '</ul>')
         else:
             parts.append('<p>No limitations supplied in the structured output.</p>')
+        parts.append('</section>')
+    areas = area_rows(report)
+    if areas:
+        parts.append('<section class="panel"><h2>Areas reviewed</h2><div class="table-wrap"><table>'
+                     '<thead><tr><th scope="col">Area</th><th scope="col">Status</th><th scope="col">Findings</th>'
+                     '<th scope="col">Input / output tokens</th></tr></thead><tbody>')
+        for area in areas:
+            usage = area.get("usage") if isinstance(area.get("usage"), dict) else {}
+            parts.append(f'<tr><td>{text(area.get("area", ""))}</td><td>{text(area.get("status", ""))}</td>'
+                         f'<td>{text(area.get("findings", "—"))}</td>'
+                         f'<td>{text(usage.get("input_tokens", "—"))} / {text(usage.get("output_tokens", "—"))}</td></tr>')
+        parts.append('</tbody></table></div></section>')
+    checks = check_rows(report)
+    if checks:
+        parts.append('<section class="panel"><h2>Deterministic checks</h2>'
+                     '<p class="muted">Pinned tools of the Security checks workflow, run on the same revision.</p>'
+                     '<div class="table-wrap"><table><thead><tr><th scope="col">Check</th><th scope="col">Result</th>'
+                     '<th scope="col">Last line of output</th></tr></thead><tbody>')
+        for item in checks:
+            parts.append(f'<tr><td>{text(item["title"])}</td><td>{check_result(item)}</td>'
+                         f'<td><code>{text(item.get("last_line", ""))}</code></td></tr>')
+        parts.append('</tbody></table></div>')
+        for item in checks:
+            parts.append(f'<details><summary>{text(item["title"])}: <code>{text(item.get("command", ""))}</code></summary>'
+                         f'<pre class="text"><code>{text(item.get("output_tail", ""))}</code></pre></details>')
         parts.append('</section>')
     scope = report.get("scope", [])
     if isinstance(scope, list) and scope:
