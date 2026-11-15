@@ -99,5 +99,15 @@ and IPv6.
 
 * Ubuntu 26.04 LTS, kernel 7.0, 32 CPUs, 62 GB RAM, 3.5 TB disk.
 * Rust 1.100 (default) and 1.96.0 (the toolchain CI pins).
-* `/usr/local/bin/golem-p2p` built from `577df97` (the same binary on puppet's host).
+* `/usr/local/bin/golem-p2p` built from `e2ff75b` (crates of `31c954c`) with
+  Rust 1.96.0, sha256 `cc4a151b…6bb6544`: iroh **1.5.0** from the
+  golemfactory/iroh fork (rev `4ad24ac2`, branch `relay-recovery`), netwatch
+  0.20. Deployed 2026-11-15 11:29 UTC (registry, directory, testnet listener);
+  the same binary runs on puppet's host (`golem-p2p-testnet-listen`) and was
+  the one measured in benchmark campaign 5
+  (`harness/results/2026-11-15-campaign5/`).
+* iroh-relay 1.5.0 from the same fork rev, built here
+  (`~/golemfactory/iroh/target/release/iroh-relay`), not run as a service on
+  master; a debug-stripped copy is the lab's own relay on `p2p-natlab` since
+  2026-11-15 (`harness/lab/deploy.sh` with `IROH_RELAY_BIN`).
 * Docker runs here; its bridge addresses are not reachable from outside.
