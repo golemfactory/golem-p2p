@@ -164,7 +164,10 @@ async fn handle(
             .field("kind", "echo")
             .emit();
     } else {
-        eprintln!("request from {from} to {to} via {path}: {}", preview(&req));
+        // Per-request lines (with the start of the request) only at debug
+        // level: a busy listener would otherwise fill the journal.
+        // `RUST_LOG=golem_p2p::listen=debug` turns them on.
+        debug!("request from {from} to {to} via {path}: {}", preview(&req));
     }
     let reply = format!(
         "{me} to={to} from={from} echo={}",
