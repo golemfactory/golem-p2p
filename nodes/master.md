@@ -96,11 +96,17 @@ with `--no-telemetry`. The collector (`golem-p2p telemetry serve`, unit
 keeps 5 s samples for an hour and per-minute samples for 7 days in
 `~/golem-p2p-testnet/telemetry/` (0700). nginx (site `golem-p2p-testnet`,
 certificate `golem-p2p-telemetry`): `POST /v1/report` is open (reports are
-signed by members; at most 10/s per address, bursts of 40); everything
-else (dashboard, `/v1/state`, `/v1/history`, `/metrics`) needs HTTP basic
-auth, user `golem`, password in
-`~/golem-p2p-testnet/telemetry-dashboard.credentials` (0600, not in git;
-nginx has only the hash, `/etc/nginx/golem-p2p-telemetry.htpasswd`). A
+signed by members; at most 10/s per address, bursts of 40). The dashboard
+and the JSON API need a Google login (since 2026-11-16): nginx
+`auth_request` to oauth2-proxy v7.15.5 (`/usr/local/bin/oauth2-proxy`,
+systemd `oauth2-proxy-telemetry`, user `oauth2-telemetry`, 127.0.0.1:4180,
+callback `/oauth2/callback`). Its config with the OAuth client secret and
+cookie secret, and the list of allowed Google accounts (one email per line,
+reloaded on change), are in `/etc/oauth2-proxy-telemetry/` (root:oauth2-telemetry
+0640, not in git). `/metrics` (for Prometheus) keeps HTTP basic auth, user
+`golem`, password in `~/golem-p2p-testnet/telemetry-dashboard.credentials`
+(0600, not in git; nginx has only the hash,
+`/etc/nginx/golem-p2p-telemetry.htpasswd`). A
 restart of the collector keeps the history (it reloads its store); a node
 missing for more than 60 s shows as offline. Checked on 2026-11-15 after the
 deploy: master's testnet node reports (found through the registry); a

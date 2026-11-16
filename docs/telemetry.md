@@ -9,8 +9,8 @@ failures. The collector shows it on a dashboard, as JSON and as Prometheus
 metrics.
 
 Testnet (`golem-testnet`): dashboard at
-<https://telemetry.golemp2p.arkiv-global.net/> (HTTP basic auth; ask the
-master node's operator for the credentials). Setup in
+<https://telemetry.golemp2p.arkiv-global.net/> (Google login, allowed accounts
+only; ask the master node's operator for access). Setup in
 [nodes/master.md](../nodes/master.md).
 
 ## On the node
@@ -120,7 +120,9 @@ golem-p2p registry serve ... --telemetry-url https://telemetry.example/
 
 It serves plain HTTP: put a TLS proxy in front, open `POST /v1/report` to
 the nodes and protect everything else (dashboard, JSON API, metrics) with
-authentication, e.g. nginx basic auth (as on master). The dashboard uses
+authentication, e.g. nginx basic auth, or a login proxy such as
+oauth2-proxy (as on master: Google login for the dashboard, basic auth for
+`/metrics`). The dashboard uses
 relative URLs only, so it also works under a path prefix.
 
 **Node status.** Online: a report within 3 report intervals (+2 s);
