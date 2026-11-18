@@ -355,7 +355,11 @@ async def scan(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
+    if sys.argv[1:2] == ["graph"]:
+        # The graph scan (tools, Haiku scanners per module and lens, Opus summary).
+        import security_graph
+        raise SystemExit(security_graph.main(sys.argv[2:]))
+    parser = argparse.ArgumentParser(description=__doc__ + " Graph scan: security_scan.py graph --help.")
     parser.add_argument("--dry-run", action="store_true", help="Show scope and limits without API calls")
     parser.add_argument("--output", type=Path, default=ROOT / "harness/results/security-haiku.json")
     parser.add_argument("--scope", choices=tuple(SCOPES), default="all",

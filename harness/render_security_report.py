@@ -306,6 +306,193 @@ def render_report(report):
     return ''.join(parts)
 
 
+VERDICTS = {"likely_real": "Likely real", "plausible_needs_test": "Needs a test",
+            "known_limit": "Known limit"}
+TOOL_STATUS = {"clean": "clean", "findings": "findings", "missing": "NOT RUN (missing)",
+               "failed": "FAILED (no result)"}
+GRAPH_CSS = """
+.verdict{background:#e3eefb;color:#1d4f86}.likely_real{background:#fbe0e9;color:#8f1741}
+.known_limit{background:#edf2f5;color:#405360}.missing,.failed{background:#fbe0e9;color:#8f1741}
+h4{margin:14px 0 4px;font-size:14px}.module{margin-top:30px}
+"""
+
+
+def objects(value, what):
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise ValueError(f"Invalid {what}")
+    return value
+
+
+def validate_graph_summary(summary):
+    if not isinstance(summary, dict) or not isinstance(summary.get("overview"), str):
+        raise ValueError("Invalid graph summary")
+    for candidate in objects(summary.get("candidates"), "candidates"):
+        if candidate.get("severity") not in SEVERITIES or candidate.get("verdict") not in VERDICTS \
+                or candidate.get("confidence") not in ("high", "medium", "low"):
+            raise ValueError("Invalid candidate")
+        for location in objects(candidate.get("locations"), "locations"):
+            if not isinstance(location.get("file"), str) or type(location.get("line")) is not int:
+                raise ValueError("Invalid location")
+    objects(summary.get("noise"), "noise")
+    objects(summary.get("tool_notes"), "tool notes")
+    for key in ("disagreements", "manual_checks", "limitations"):
+        if not isinstance(summary.get(key), list) or not all(isinstance(i, str) for i in summary[key]):
+            raise ValueError(f"Invalid {key}")
+
+
+def items_list(values):
+    return "<ul>" + "".join(f'<li class="text">{text(v)}</li>' for v in values) + "</ul>" if values \
+        else '<p class="muted">None.</p>'
+
+
+def table(headers, rows):
+    head = "".join(f'<th scope="col">{text(h)}</th>' for h in headers)
+    body = "".join("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows)
+    return f'<div class="table-wrap"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
+
+
+def joined(value):
+    return ", ".join(str(v) for v in value) if isinstance(value, list) else str(value)
+
+
+def render_candidate(index, c):
+    locations = ", ".join(f'{location["file"]}:{location["line"]}' for location in c["locations"])
+    parts = [f'<article class="finding"><span class="badge {c["severity"]}">{c["severity"].title()}</span>'
+             f'<span class="badge">{text(c["confidence"].title())} confidence</span>'
+             f'<span class="badge verdict {c["verdict"]}">{VERDICTS[c["verdict"]]}</span>'
+             f'<h2>{index:02d}. {text(c.get("title", ""))}</h2><code>{text(locations)}</code>',
+             definition_list([("Module", c.get("module", "")), ("Lenses", joined(c.get("lenses", []))),
+                              ("Sources", joined(c.get("sources", [])))])]
+    for key, label in (("reasoning", "Reasoning"), ("impact", "Impact"),
+                       ("suggested_fix", "Suggested fix"), ("disagreement", "Disagreement")):
+        if c.get(key):
+            parts.append(f'<h3>{label}</h3><p class="text">{text(c[key])}</p>')
+    parts.append("</article>")
+    return "".join(parts)
+
+
+def render_tool(tool):
+    findings = objects(tool.get("findings", []), "tool findings")
+    parts = [f'<details><summary>{text(tool.get("tool", ""))}: {text(TOOL_STATUS.get(tool.get("status"), "?"))}, '
+             f'{len(findings)} findings</summary>'
+             f'<p class="muted"><code>{text(tool.get("command", ""))}</code><br>'
+             f'Raw output: {text(joined(tool.get("raw", [])))}</p>']
+    if tool.get("tool") == "clippy-panics":
+        counts = Counter((f.get("file"), str(f.get("rule", "")).split("::")[-1]) for f in findings)
+        files = sorted({file for file, _ in counts})
+        lints = sorted({lint for _, lint in counts})
+        parts.append(table(["File", *lints], [[f"<code>{text(file)}</code>",
+                                               *(text(counts[(file, lint)] or "") for lint in lints)]
+                                              for file in files]))
+    elif findings:
+        parts.append(table(["Rule", "Severity", "Location", "Package", "Message"], [[
+            text(f.get("rule", "")), text(f.get("severity", "")),
+            f'<code>{text(f.get("file") or "")}{":" + text(f["line"]) if f.get("line") else ""}</code>',
+            text(f.get("package") or ""), f'<span class="text">{text(f.get("message", ""))}</span>']
+            for f in findings[:200]]))
+    parts.append("</details>")
+    return "".join(parts)
+
+
+def render_graph_report(report):
+    summary = report.get("summary")
+    if summary is not None:
+        validate_graph_summary(summary)
+    tools = objects(report.get("tools", []), "tools")
+    scanners = objects(report.get("scanners", []), "scanners")
+    findings = objects(report.get("scanner_findings", []), "scanner findings")
+    cost = report.get("measured_cost_usd") if isinstance(report.get("measured_cost_usd"), dict) else {}
+    usage = report.get("usage") if isinstance(report.get("usage"), dict) else {}
+    parts = ["""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>golem-p2p · Security graph scan</title><style>""", CSS, GRAPH_CSS,
+             "</style></head><body><main><header><div class=\"eyebrow\">golem-p2p / graph scan report</div>"
+             "<h1>Security graph scan</h1><p class=\"muted\">Deterministic tools, narrow scanners, one summary"
+             " · Rendered locally</p></header>"]
+
+    def money(value):
+        return f"${value:.4f}" if isinstance(value, (int, float)) and not isinstance(value, bool) else "—"
+
+    def tokens(part):
+        u = usage.get(part) if isinstance(usage.get(part), dict) else {}
+        return f'{u.get("input_tokens", "—")} in / {u.get("output_tokens", "—")} out'
+
+    parts.append('<section class="panel" aria-label="Run metadata">' + definition_list([
+        ("Run status", report.get("status", "")), ("Summary", report.get("summary_status", "")),
+        ("Models", f'{report.get("scanner_model", "")} scanners (thinking {report.get("scanner_thinking", "")}), '
+                   f'{report.get("summary_model", "")} summary (thinking {report.get("summary_thinking", "")})'),
+        ("Source", f'{report.get("source", "")} ({report.get("source_commit", "")})'),
+        ("Completed (UTC)", report.get("completed_at_utc", "")),
+        ("Scanner tokens", tokens("scanners")), ("Summary tokens", tokens("summary")),
+        ("Measured cost", f'{money(cost.get("total"))} (scanners {money(cost.get("scanners"))}, '
+                          f'summary {money(cost.get("summary"))}); worst case allowed '
+                          f'{money(report.get("estimated_max_usd"))}'),
+    ]) + '</section>')
+    if summary is None:
+        parts.append('<section class="panel"><h2>No summary available</h2><p>The summary step did not '
+                     'complete. Scanner and tool results follow. This is not a zero-findings result.</p></section>')
+    else:
+        candidates = summary["candidates"]
+        counts = Counter(c["severity"] for c in candidates)
+        parts.append('<div class="metrics" aria-label="Candidates by severity">' + "".join(
+            f'<div class="metric"><span class="badge {s}">{s.title()}</span><strong>{counts[s]}</strong></div>'
+            for s in SEVERITIES) + '</div>')
+        parts.append(f'<section class="panel"><h2>Summary</h2><p class="text">{text(summary["overview"])}</p></section>')
+        parts.append(f'<section aria-label="Candidates"><h2>Ranked candidates <span class="muted">({len(candidates)})'
+                     '</span></h2>')
+        parts.extend(render_candidate(i, c) for i, c in enumerate(candidates, 1))
+        if not candidates:
+            parts.append('<p>No candidates.</p>')
+        parts.append('</section>')
+        parts.append('<section class="panel"><h2>Verify by hand</h2>' + items_list(summary["manual_checks"]) +
+                     '<h2>Disagreements between scanners</h2>' + items_list(summary["disagreements"]) + '</section>')
+        parts.append('<section class="panel"><h2>Tool assessment</h2>' + table(
+            ["Tool", "Assessment", "Action"], [[text(n.get("tool", "")), f'<span class="text">{text(n.get("assessment", ""))}</span>',
+                                                f'<span class="text">{text(n.get("action", ""))}</span>']
+                                               for n in summary["tool_notes"]]) + '</section>')
+        parts.append(f'<section class="panel"><h2>Dismissed as noise <span class="muted">({len(summary["noise"])})</span></h2>'
+                     + table(["Sources", "Reason"], [[text(joined(n.get("sources", []))),
+                                                       f'<span class="text">{text(n.get("reason", ""))}</span>']
+                                                      for n in summary["noise"]]) + '</section>')
+        checks = report.get("summary_checks", [])
+        parts.append('<section class="panel"><h2>Limitations</h2>' + items_list(summary["limitations"]) +
+                     '<h3>Consistency checks of the summary</h3>' +
+                     items_list(checks if isinstance(checks, list) else []) + '</section>')
+    parts.append('<section class="panel"><h2>Deterministic tools</h2>' + table(
+        ["Tool", "Version", "Result", "Findings", "Summary"],
+        [[text(t.get("tool", "")), text(t.get("version", "")),
+          f'<span class="badge {text(t.get("status", ""))}">{text(TOOL_STATUS.get(t.get("status"), "?"))}</span>',
+          text(t.get("finding_count", "")), f'<span class="text">{text(t.get("summary", ""))}</span>']
+         for t in tools]))
+    parts.extend(render_tool(t) for t in tools)
+    parts.append('</section>')
+    parts.append('<section aria-label="Modules"><h2>Scanners by module</h2>')
+    modules = report.get("modules") if isinstance(report.get("modules"), dict) else {}
+    for name in dict.fromkeys([s.get("module") for s in scanners]):
+        rows = [s for s in scanners if s.get("module") == name]
+        files = modules.get(name, {}).get("files", []) if isinstance(modules.get(name), dict) else []
+        parts.append(f'<div class="panel module"><h2>{text(name)}</h2><p class="muted">{text(joined(files))}</p>')
+        parts.append(table(["Lens", "Status", "Findings", "Tokens in / out", "Cost"], [[
+            text(s.get("lens", "")), text(s.get("status", "")), text(s.get("findings", "—")),
+            text(f'{(s.get("usage") or {}).get("input_tokens", "—")} / {(s.get("usage") or {}).get("output_tokens", "—")}'),
+            text(money(s.get("cost_usd")))] for s in rows]))
+        for f in (f for f in findings if f.get("module") == name):
+            severity = f.get("severity") if f.get("severity") in SEVERITIES else "low"
+            parts.append(f'<details><summary>{text(f.get("id", ""))} <span class="badge {severity}">{severity}</span>'
+                         f'{text(f.get("title", ""))}</summary><p><code>{text(f.get("file", ""))}:{text(f.get("line", ""))}</code> · '
+                         f'{text(f.get("confidence", ""))} confidence</p>')
+            for key, label in DETAILS:
+                parts.append(f'<h4>{label}</h4><p class="text">{text(f.get(key, ""))}</p>')
+            parts.append('</details>')
+        parts.append('</div>')
+    parts.append('</section><footer>Model-generated findings and verdicts are reproduced as supplied and are '
+                 'hypotheses until checked against the code. This document is self-contained and makes no '
+                 'network requests.</footer></main></body></html>')
+    return "".join(parts)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path, help="Structured report JSON")
@@ -316,7 +503,12 @@ def main():
     output = args.output or args.input.with_suffix(".html" if args.format == "html" else ".summary.md")
     try:
         report = json.loads(args.input.read_text(encoding="utf-8"))
-        html = render_report(report) if args.format == "html" else render_github_summary(report)
+        if isinstance(report, dict) and report.get("kind") == "security_graph":
+            if args.format != "html":
+                raise ValueError("Graph reports render as HTML only")
+            html = render_graph_report(report)
+        else:
+            html = render_report(report) if args.format == "html" else render_github_summary(report)
         output.parent.mkdir(parents=True, exist_ok=True)
         # Preserve both the input and any existing report.
         with output.open("x", encoding="utf-8") as destination:
