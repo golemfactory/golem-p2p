@@ -1,0 +1,62 @@
+{
+  "module": "telemetry",
+  "lens": "crypto",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/telemetry.rs",
+      "sha256": "c4f78826a11a7d207d8f6e4f1e7cb5cedde7050863c8e8a1c839d2131cac6036",
+      "lines": 223
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/telemetry/mod.rs",
+      "sha256": "d44356d32854710c4105d83cd2df68e54ae44563f09a0ed1b20855cff7c9139e",
+      "lines": 812
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+      "sha256": "d8aba9e0904a7326c5a0066daf3f5b37d82bbadd84566c05c246fa58c061c8d4",
+      "lines": 1961
+    }
+  ],
+  "review": {
+    "summary": "Reviewed the telemetry signature path (digest, sign, verify, collector accept) through the cryptography lens. The signed bytes are the bytes that are parsed and stored, the recovered signer must be covered by a valid membership certificate, and the collector checks that the body's node_id matches the signer. One hypothesis remains: the signed digest has no network binding, so a report signed under one network may be accepted by another network's collector. This needs a test.",
+    "findings": [
+      {
+        "title": "Telemetry digest has no network binding: a report signed for one closed network can be replayed to another network's collector",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/telemetry.rs",
+        "line": 46,
+        "prerequisites": "The same node identity must be a member of two closed networks that use different registries and different collector URLs. The attacker must obtain a signed report of that node from network A and deliver it to network B's collector within the collector's 5 min clock-skew window, and that report's timestamp must be newer than B's last accepted timestamp for the node. Delivery could be done by a malicious collector or relay of network A.",
+        "impact": "Network B's collector accepts a report that its members never sent to it. The attacker can inject fake counters, fake connection lists, or a stopping=true report that marks the node offline in B's dashboard and metrics until its next genuine report. The attacker cannot forge a signature, so this is limited to replaying reports the identity really signed.",
+        "evidence": "telemetry.rs:34 `pub const DOMAIN: &[u8] = b\"golem-p2p/telemetry/v1\\0\";` and telemetry.rs:46-51 `pub fn digest(body: &[u8]) -> [u8; 32] { let mut h = Sha256::new(); h.update(DOMAIN); h.update(body); h.finalize().into() }`. The network name is not in the digest, and verify (telemetry.rs:96-118) checks the network only through the certificate, which is not covered by the signature. collector.rs:471-477 passes the network-independent digest to `golem_p2p::telemetry::verify(&self.config.policy, body, &sig, &cert, ...)`.",
+        "suggested_fix": "Include the network name in the signed digest, for example h.update(DOMAIN); h.update(&(network.len() as u64).to_be_bytes()); h.update(network.as_bytes()); h.update(body), with the network taken from the policy in both sign and verify. Add a test that a report signed for network A fails verification under network B's policy.",
+        "validation_needed": "Write a test with one identity that holds valid certificates for two networks with different registry keys. Sign a report for network A's digest, then call verify with network B's policy and a valid B certificate. Confirm it is accepted, which demonstrates the defect. Also check that the record and membership signature domains differ from b\"golem-p2p/telemetry/v1\\0\", since the source for those is not supplied.",
+        "lens": "crypto",
+        "module": "telemetry",
+        "id": "telemetry/crypto#1"
+      }
+    ],
+    "limitations": [
+      "record.rs, membership.rs, signer.rs and the Signature::recover_node_id / from_slice implementation are not supplied; recovery-id handling, low-s normalisation and the exact domain strings used by records and certificates could not be checked, so signature malleability and cross-message domain separation are not assessed beyond this file.",
+      "Signature malleability (alternative encodings of the same signature) was considered; the collector keys nodes by node_id, not by signature, and replay is blocked by the timestamp check, so no finding is reported.",
+      "The membership certificate is not covered by the report signature; this is a known limit and was not re-reported.",
+      "The collector's dashboard.html and any reverse-proxy authentication in nodes/master.md are not supplied; the oauth2-proxy and nginx setup cannot be assessed.",
+      "The semgrep temp_dir hit in collector.rs is in a test (store_survives_restarts) and is not a security operation, so it is not reported.",
+      "Node eviction after retention and the replay window after eviction were checked: a captured report older than the 5 min skew window cannot be replayed, so no finding is reported.",
+      "Rate limiting and per-request signature cost are outside this lens and, per the known limits, were not reported."
+    ],
+    "lens": "crypto"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 52445,
+    "output_tokens": 5966,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0082275
+}

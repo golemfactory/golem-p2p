@@ -1,0 +1,45 @@
+{
+  "module": "bench-soak",
+  "lens": "panics",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p-cli/src/bench/mod.rs",
+      "sha256": "523a23d39999d117417019a9dc03fa401b54b67c38382541ea4453cd3eec4554",
+      "lines": 1716
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/bench/local.rs",
+      "sha256": "4b6a10aa97c10b8a2669624adc41bbdf2400521314147452740aa85fe335d5b4",
+      "lines": 399
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/soak.rs",
+      "sha256": "618a5a687767690004e2d45c505022e16377ae5fb579e93f04757fbc1e295e22",
+      "lines": 802
+    }
+  ],
+  "review": {
+    "summary": "Reviewed bench/mod.rs, bench/local.rs and soak.rs for panics, unwraps, arithmetic, casts, locks across awaits, poisoning, channel backpressure and shutdown hangs. I found no concrete, demonstrated panic or hang reachable from malicious peer input. The expect('poisoned') calls guard locks that are never held across an await or a panicking call. Slicing in local.rs is bounded by the loop invariant n < buf.len(). Clamp bounds in concurrency_request_size are safe because the lower bound is min'd with max. Workers and select loops terminate through deadlines and timeouts. The soak channels and shutdown path are bounded by request timeouts. Remaining concerns are hypotheses that need the omitted helper code or a test, and I do not report them as findings.",
+    "findings": [],
+    "limitations": [
+      "probe.rs (ping_series, Pinger, upload/download, COUNT_WAIT_MAX, payload, Stats) is not supplied, so the arithmetic and bounds of those helpers are unchecked.",
+      "Endpoint::request and its reply-size bound are not supplied; a malicious listener could send a large reply, and whether memory is bounded there is unverified.",
+      "The golem-p2p builder, Endpoint::stats, instance_id() type, and listen::MAX_REQUEST / SINK_MAGIC definitions are not supplied, so indexing of instance_id()[0] and the timeout plumbing are assumed.",
+      "Clippy hits were checked only where the lines appear in the supplied files; the lint list was not verified line by line for all 325 hits.",
+      "Soak shutdown delay (requester blocked on a full echo channel while not observing stop) was considered and judged too weak to report: the channel is drained promptly and the delay is bounded by the request timeout.",
+      "Process-level behaviour under real network conditions was not exercised; no tests were run."
+    ],
+    "lens": "panics"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 54819,
+    "output_tokens": 6979,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.008971400000000001
+}

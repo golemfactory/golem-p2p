@@ -1,0 +1,122 @@
+{
+  "module": "harness-python",
+  "lens": "dos",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "harness/lab/tools/reflector.py",
+      "sha256": "eee1dfab3aeccdec8f1482bfeba4431d136031bb901a6a6edf7246682fddc7ed",
+      "lines": 137
+    },
+    {
+      "file": "harness/lab/tools/natcheck.py",
+      "sha256": "57c1a3c2a7110410ec65739c60e610ae07c63301f9dd5b5f75315995e0b40db1",
+      "lines": 195
+    },
+    {
+      "file": "harness/security_scan.py",
+      "sha256": "8c5712fa22a61e3b7e4208214269ea3227399fc0b19f5c41bc72f3b5eac5ec9a",
+      "lines": 378
+    },
+    {
+      "file": "harness/security_graph.py",
+      "sha256": "08a394b05e1e711a49240fdc54c374da2325778aab0d8e4c7c9e45f3da57b52b",
+      "lines": 650
+    },
+    {
+      "file": "harness/security_tools.py",
+      "sha256": "831adf8b65164f0300b1933d6138b35f038cfb7e4dabc8e77b5c6238f3222a51",
+      "lines": 454
+    },
+    {
+      "file": "harness/render_security_report.py",
+      "sha256": "59877bd51adb512a5ea30940915542b9f33bce6317a8442ad3db509b2c30bc06",
+      "lines": 525
+    }
+  ],
+  "review": {
+    "summary": "Reviewed the reflector, NAT client and security tooling through the input parsing, DoS and resource bounds lens. The clearest issue is that one FILT request fans out into several UDP datagrams, including packets to arbitrary ports of a spoofed source, which makes the reflector usable for reflected UDP traffic. Other findings are a small crash in natcheck on a malformed reply and unbounded queue and output sizes that are hypotheses needing tests.",
+    "findings": [
+      {
+        "title": "FILT requests amplify into several datagrams, including attacker-chosen ports of a spoofed source",
+        "severity": "high",
+        "confidence": "high",
+        "file": "harness/lab/tools/reflector.py",
+        "line": 123,
+        "prerequisites": "Any sender that can reach a reflector UDP port and can spoof the source address (no handshake on UDP). The reflector must have more than one UDP socket, or the request must include extra ports.",
+        "impact": "One FILT datagram of about 20 bytes produces one MAPPED reply, up to (number of sockets - 1) UNSOL packets, and up to max_extra_ports (default 4) TOPORT packets. The TOPORT packets go to the spoofed source IP on ports the request chooses, so the reflector can be used to send unsolicited UDP traffic to third parties. The docstring promises only that each reply is small, which does not cover the number of replies.",
+        "evidence": "Line 114: for p in parts[2 : 2 + args.max_extra_ports]: ... Line 123: heapq.heappush(pending, (when, seq, sock, msg.encode(), (src[0], port))). Lines 108-113 push one UNSOL per other UDP socket to src. Line 23 says replies are no larger than the request plus a few dozen bytes, but says nothing about the count. Demonstrated code defect: the fan-out and the arbitrary destination port are in the code. Reflection against a real victim needs a test.",
+        "suggested_fix": "Do not send unsolicited packets to a source port the client merely asserts. Either drop the TOPORT feature or send TOPORT probes only after the client proves it owns the address, for example by echoing a value the reflector sent to that address. Cap FILT fan-out per source and per time window, and document the multiplication factor.",
+        "validation_needed": "Send spoofed FILT datagrams from a test host with a second host as the victim and count the bytes and packets the victim receives per request. Confirm the port selection is attacker-controlled.",
+        "lens": "dos",
+        "module": "harness-python",
+        "id": "harness-python/dos#1"
+      },
+      {
+        "title": "Pending send queue has no bound",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "harness/lab/tools/reflector.py",
+        "line": 113,
+        "prerequisites": "A high rate of FILT datagrams, which may use spoofed or many source addresses. The delay (default 0.2 s) keeps entries queued.",
+        "impact": "Each FILT adds (sockets - 1) + up to 4 heap entries, each holding a copy of the payload, and nothing caps the heap size. Memory grows with request rate times delay times fan-out. This is bounded by the send rate rather than unbounded, but it is an easy way to make the reflector consume memory.",
+        "evidence": "Line 71: pending = []  # heap of (when, seq, sock, payload, dest). Lines 113 and 123 push without any length check. Lines 124-130 drain only entries whose time has come.",
+        "suggested_fix": "Cap len(pending) and drop FILT requests when the cap is reached. Add a per-source FILT rate limit before the fan-out is queued.",
+        "validation_needed": "Hypothesis: flood FILT at the maximum rate the host can receive and measure the heap size and RSS over a minute.",
+        "lens": "dos",
+        "module": "harness-python",
+        "id": "harness-python/dos#2"
+      },
+      {
+        "title": "natcheck crashes on a malformed MAPPED reply",
+        "severity": "low",
+        "confidence": "high",
+        "file": "harness/lab/tools/natcheck.py",
+        "line": 98,
+        "prerequisites": "The reflector named by --map returns a MAPPED reply whose third field is not ip:port, which requires a malicious or broken reflector, or an on-path attacker who knows the nonce. The nonce is 48 random bits, so an off-path attacker is unlikely to match it.",
+        "impact": "The client stops with an uncaught ValueError from parse_addr instead of reporting the mapping. This is a robustness issue in a diagnostic client, not a remote compromise.",
+        "evidence": "Line 56: if len(parts) >= 3 and parts[0] == 'MAPPED' and parts[1] == nonce: return parts[2], nonce. Line 98: preserved = bool(got) and all(parse_addr(o)[1] == lport for o in got). parse_addr (line 35) calls rsplit(':', 1) and unpacks two values, so a token without a colon raises ValueError.",
+        "suggested_fix": "Validate parts[2] with a try/except around parse_addr in query or mapping_test, and treat an invalid reply as no reply.",
+        "validation_needed": "Run the mapping test against a local fake reflector that returns MAPPED x VIA y and confirm the traceback.",
+        "lens": "dos",
+        "module": "harness-python",
+        "id": "harness-python/dos#3"
+      },
+      {
+        "title": "Command output and git archive are read without size limits or timeouts in the tool runner",
+        "severity": "low",
+        "confidence": "low",
+        "file": "harness/security_tools.py",
+        "line": 266,
+        "prerequisites": "A repository whose tracked content makes a tool emit very large output, for example a large PR under scan, or a slow git archive or tar step.",
+        "impact": "Subprocess output is held in memory in full, and the git archive and tar calls have no timeout, so a very large or stuck step can exhaust memory or hang the run. The tools are run by the operator on HEAD, so this is a hypothesis about operational robustness rather than a remote attack.",
+        "evidence": "Line 66-67: subprocess.run(cmd, cwd=cwd, env=self.env, capture_output=True, text=True, errors='replace', timeout=timeout). Lines 266-268: subprocess.run(['git', 'archive', '--format=tar', 'HEAD'], cwd=ROOT, capture_output=True, check=True).stdout and subprocess.run(['tar', '-x', ...], input=archive, check=True) with no timeout.",
+        "suggested_fix": "Cap the captured output size, and give git archive and tar the same timeout the runner uses. Stream the archive to a file instead of holding it in memory.",
+        "validation_needed": "Hypothesis: run the gitleaks step against a repository with a multi-gigabyte tracked file and observe memory and time.",
+        "lens": "dos",
+        "module": "harness-python",
+        "id": "harness-python/dos#4"
+      }
+    ],
+    "limitations": [
+      "The reflector's callers, deployment and firewall rules are not in the supplied source. The amplification finding assumes the reflector is reachable from the internet, as the module description states.",
+      "Whether a spoofed source reaches a victim depends on network ingress filtering, which is outside the supplied files.",
+      "The semgrep and clippy results were not re-run. The review relies on the source and the listed results, and treats the clippy hits as leads only.",
+      "The Anthropic SDK and pydantic_ai behaviour (response size, retries, streaming limits) is not in the supplied source, so memory bounds of model responses are assumed from the max_tokens settings.",
+      "record.rs and the other Rust files are not supplied. This review covers only the Python harness and makes no claims about the Rust library.",
+      "The repository's CI configuration and the runner's resource limits are not supplied, so operational timeouts outside the Python code cannot be assessed.",
+      "Only the dos lens is applied. Leak, auth and crypto issues in these files are out of scope and were not reported."
+    ],
+    "lens": "dos"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 53087,
+    "output_tokens": 7207,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0089122
+}

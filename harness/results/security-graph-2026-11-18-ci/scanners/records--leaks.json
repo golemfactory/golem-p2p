@@ -1,0 +1,101 @@
+{
+  "module": "records",
+  "lens": "leaks",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/record.rs",
+      "sha256": "840e094e6272521849a45d3138bcf9f3597cb55be069cc2e42d0806eb271f0eb",
+      "lines": 721
+    },
+    {
+      "file": "crates/golem-p2p/src/identity.rs",
+      "sha256": "3b1f8daa7a207afbc75e06b2fe9bf0f994e59f2de58c9e275924dfd75d92032e",
+      "lines": 230
+    },
+    {
+      "file": "crates/golem-p2p/src/signer.rs",
+      "sha256": "f0886277410202573aef33f6932c9ead958dea9a9af1f202dfb80953fb66df7e",
+      "lines": 199
+    },
+    {
+      "file": "crates/golem-p2p/src/store.rs",
+      "sha256": "c60552af3563f261d1b40c94c3a1a821e1b87ffefc5a6d7189b57dd84d5a9079",
+      "lines": 529
+    },
+    {
+      "file": "crates/golem-p2p/src/directory.rs",
+      "sha256": "745d576c86e8af0cd08a15a96589f13b2b7b99f62c55cdbcfdae6e04eae2b1e1",
+      "lines": 117
+    }
+  ],
+  "review": {
+    "summary": "Within the secrets, logging and information-leak lens, the five files contain no logging, no secret material reaching Debug/Display of records, and no HTML or JSON built by concatenation. The main demonstrated concern is that records accept and the directory serves any listed direct address, including the Docker bridge and other internal addresses the module's own test exercises. A smaller item is verification error text returned verbatim to unauthenticated HTTP clients. A library helper also exports raw identity secret keys, though nothing reachable from the network calls it.",
+    "findings": [
+      {
+        "title": "Records accept and the public directory serves internal and container bridge addresses to anyone",
+        "severity": "medium",
+        "confidence": "high",
+        "file": "crates/golem-p2p/src/record.rs",
+        "line": 80,
+        "prerequisites": "Any node that signs its own record, or any client that sends a record it signed with its own identity and endpoint keys, can list arbitrary direct_addrs such as 172.17.0.1 or other private addresses. The directory accepts such records with no address filtering, and GET /v1/records/{node_id} returns them to any anonymous HTTP client.",
+        "impact": "Host network details (Docker bridge subnets, LAN addresses) are published to every party that can query the directory and to every peer that dials the record. This is the internal-address disclosure the lens targets. Nothing in validate() or verify_at() rejects private, loopback or link-local addresses, and the in-file test record_with_docker_addrs_verifies asserts that such records are accepted and that peers dial them.",
+        "evidence": "pub direct_addrs: Vec<SocketAddr>, with validate() checking only the count (if self.direct_addrs.len() > MAX_DIRECT_ADDRS). The test comment states: Leaving out container bridge addresses is publishing policy, not a verification rule ... still verifies, and peers dial every listed address. directory.rs get_record returns rec.to_bytes() unfiltered.",
+        "suggested_fix": "Decide the publishing policy in the node, not only by convention. Filter private, loopback, link-local and bridge addresses when signing (sign_record_with_membership), and have the directory refuse or strip them on PUT. Keep the test, but assert the filtered result rather than acceptance.",
+        "validation_needed": "Demonstrated in source, not run: PUT a record signed with a 172.17.0.1 direct address to a running directory, then GET it anonymously. Confirm the address is returned. Also confirm how the membership check (not in the supplied source) treats these addresses.",
+        "lens": "leaks",
+        "module": "records",
+        "id": "records/leaks#1"
+      },
+      {
+        "title": "Verification error text is echoed verbatim to unauthenticated HTTP clients",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p/src/directory.rs",
+        "line": 91,
+        "prerequisites": "An anonymous client sends a PUT /v1/records request with arbitrary bytes. Any reachable directory answers with the text of the RecordError.",
+        "impact": "The remote party learns which validation step failed, including the identity that failed to sign, the relay-URL and identity-count rules, and the membership policy message on line 96. This is more detail than a rejected publisher needs, and it helps an attacker tune forged records. It does not leak secret keys, and the response is only as verbose as the Display strings in record.rs and the membership module.",
+        "evidence": "Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(), and on line 96 (StatusCode::FORBIDDEN, e.to_string()). RecordError::IdentitySignature(NodeId) is declared as #[error(\"identity {0} did not sign this record\")], so the response names a specific identity.",
+        "suggested_fix": "Return a fixed, generic message such as invalid record (400) and a generic forbidden message (403), and log the detailed RecordError server-side with the peer address and a rate limit. Do not log untrusted record content without escaping.",
+        "validation_needed": "Hypothesis on the wording's severity. The membership policy's error text is not in the supplied source, so its content is unknown and needs review in membership.rs.",
+        "lens": "leaks",
+        "module": "records",
+        "id": "records/leaks#2"
+      },
+      {
+        "title": "Library API exports raw identity secret keys with no restriction or zeroization",
+        "severity": "low",
+        "confidence": "high",
+        "file": "crates/golem-p2p/src/signer.rs",
+        "line": 122,
+        "prerequisites": "A caller of the public InMemorySigner API calls secret(id). Nothing reachable from the network calls it, so an attacker needs code-level access to the process or to a caller that exposes the value.",
+        "impact": "The function returns the 32-byte secp256k1 secret of an identity as a plain copied array with no zeroization, no restriction and no doc(hidden). The module's stated design is that this crate never needs a secret key. Any logging, serialization or debug dump of the returned value would leak an identity key, and the returned copies are not wiped from memory.",
+        "evidence": "pub fn secret(&self, id: NodeId) -> Option<[u8; 32]> { let keys = self.keys.lock().expect(\"poisoned\"); keys.get(&id).map(|e| e.key.to_bytes().into()) } with the doc comment: Returns the raw secret key of an identity, for persisting test keys.",
+        "suggested_fix": "Gate the method behind #[cfg(test)] or a test-only feature, or mark it #[doc(hidden)] and return a wrapper type with a redacted Debug and zeroize-on-drop. Confirm no production path uses it.",
+        "validation_needed": "Check the call sites in the CLI and other crates (not supplied) for any production use that writes the key to a file, log or command line.",
+        "lens": "leaks",
+        "module": "records",
+        "id": "records/leaks#3"
+      }
+    ],
+    "limitations": [
+      "The membership module, the discovery and endpoint modules, the CLI, and any server or log configuration were not supplied. Membership error text and whether the directory is public in deployment could change findings 1 and 2.",
+      "No logging, tracing or metrics calls exist in the five supplied files, so log and telemetry exposure could not be traced end to end.",
+      "Behaviour of the iroh crate (Debug output of EndpointId, SecretKey, and relay URLs) was not visible, so claims about its formatting are not made.",
+      "The directory's deployment behind a TLS proxy and its access controls are outside the source; the module doc says it is plain HTTP by design, which is treated as decided.",
+      "seq is microseconds since the epoch and instance_id is stable per process, so every record reveals signing time and restart correlation. This is by design per the record docs and was not reported as a finding.",
+      "Clippy, semgrep and the other deterministic tool results were not repeated, per the review instructions."
+    ],
+    "lens": "leaks"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 33440,
+    "output_tokens": 3996,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.005342
+}

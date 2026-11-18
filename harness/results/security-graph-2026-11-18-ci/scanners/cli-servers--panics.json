@@ -1,0 +1,71 @@
+{
+  "module": "cli-servers",
+  "lens": "panics",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p-cli/src/listen.rs",
+      "sha256": "32d0d84ba4b857409d4c731918a3a398671a62c51de095256b55bcf22236930e",
+      "lines": 468
+    },
+    {
+      "file": "crates/golem-p2p/src/addrs.rs",
+      "sha256": "7c600b9a5f70faca87026e802ff3f79dd8dcf1ec24b40c3791cf1c21e139b920",
+      "lines": 495
+    }
+  ],
+  "review": {
+    "summary": "Reviewed listen.rs and addrs.rs through the concurrency, panics and unwraps lens. I found no panic reachable from remote input: the indexing, subtraction and casts in listen.rs (lines 119, 136, 155, 203, 419-421) are guarded by loop conditions, starts_with checks, or min() bounds, and addrs.rs indexing (line 202, names non-empty; line 159, fixed array) is safe. The main concurrency issue is that the request-time budget is applied in two separate windows, so a peer can hold a stream longer than REQUEST_TIME. The second is that per-connection handler tasks are detached with no tracking, so shutdown does not wait for them. Both are low severity and are demonstrated from the code, not run.",
+    "findings": [
+      {
+        "title": "Request-head budget resets: download request read gets a fresh REQUEST_TIME after the shared deadline",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/listen.rs",
+        "line": 145,
+        "prerequisites": "A remote peer opens an application stream and sends the SOURCE_MAGIC prefix, then sends the rest of the request (byte count) slowly or not at all, without finishing the stream.",
+        "impact": "The head read is bounded by the shared deadline (line 111, 129), but the source-request read at line 145 uses a new tokio::time::timeout(REQUEST_TIME) that is not tied to that deadline. A stream can therefore be held for up to about 2 x REQUEST_TIME (20 s) before refusal, instead of 10 s. Each such stream occupies a spawned task and a QUIC stream slot, but not a transfer slot. This is a time-bound inconsistency, not a panic; the exposure is bounded by the QUIC stream limits and the connection cap.",
+        "evidence": "let deadline = tokio::time::Instant::now() + REQUEST_TIME; ... match tokio::time::timeout_at(deadline, read_head).await { ... } ... match tokio::time::timeout(REQUEST_TIME, recv.read_to_end(max)).await { Ok(rest) => req.extend_from_slice(&rest?), Err(_) => req.clear(), }",
+        "suggested_fix": "Pass the same deadline into the source-request read: use tokio::time::timeout_at(deadline, recv.read_to_end(max)) so the whole request head shares one REQUEST_TIME budget, as the echo path already does at line 156.",
+        "validation_needed": "Hypothesis from reading the code: write a test with a peer that sends SOURCE_MAGIC and then stalls, and measure time to refusal before and after the change.",
+        "lens": "panics",
+        "module": "cli-servers",
+        "id": "cli-servers/panics#1"
+      },
+      {
+        "title": "Per-connection handler tasks are detached and never joined or cancelled on shutdown",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/listen.rs",
+        "line": 84,
+        "prerequisites": "The endpoint is closed (ep.accept() returns None) while requests are in flight, for example during CLI shutdown.",
+        "impact": "serve() returns as soon as accept() yields None, but the handle() tasks spawned at line 84 are not tracked, so they are neither awaited nor aborted. In-flight transfers can still hold transfer slots and write to the output after the caller has assumed serve is done. Each task is bounded by timeouts (REQUEST_TIME, max_transfer_time, and the 10 s send.stopped wait at line 399), so this is not an indefinite hang. Remote peers cannot exceed the bounds by this path. Whether the process exits before those tasks finish depends on the caller in main.rs, which is not supplied.",
+        "evidence": "while let Some(inc) = ep.accept().await { ... tokio::spawn(async move { let from = inc.from(); match handle(inc, &out, &me, &limits, &slots).await { ... } }); }",
+        "suggested_fix": "Track handlers in a tokio::task::JoinSet and drain or abort it after the accept loop ends, so shutdown order is explicit and output is not written after the caller's shutdown point.",
+        "validation_needed": "Check the caller in main.rs, which was not supplied, to see whether it waits for serve or exits the process; if it exits, this is a clean-shutdown issue only.",
+        "lens": "panics",
+        "module": "cli-servers",
+        "id": "cli-servers/panics#2"
+      }
+    ],
+    "limitations": [
+      "main.rs, observe.rs, out.rs and telemetry.rs were not supplied, so the caller's shutdown behaviour and the semantics of ACTIVITY, Out and path_name are unknown.",
+      "record.rs was not supplied; MAX_DIRECT_ADDRS and the record bounds were taken from the review brief.",
+      "The iroh and netwatch crate behaviour (ReadError, read_chunk, stop, reset, netwatch State::new) was assumed from usage and not checked against the dependency source.",
+      "Clippy lint hits at listen.rs 111, 120, 136, 155, 306, 419 and 421 were checked by hand and found guarded, so they are not reported.",
+      "Lock-based concurrency is not present in these files; the only synchronisation is a tokio Semaphore, whose use was reviewed.",
+      "No tests were run; the review is static and does not establish runtime behaviour."
+    ],
+    "lens": "panics"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 19354,
+    "output_tokens": 4316,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0040934000000000005
+}

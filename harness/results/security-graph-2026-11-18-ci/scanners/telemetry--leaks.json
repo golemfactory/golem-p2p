@@ -1,0 +1,105 @@
+{
+  "module": "telemetry",
+  "lens": "leaks",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/telemetry.rs",
+      "sha256": "c4f78826a11a7d207d8f6e4f1e7cb5cedde7050863c8e8a1c839d2131cac6036",
+      "lines": 223
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/telemetry/mod.rs",
+      "sha256": "d44356d32854710c4105d83cd2df68e54ae44563f09a0ed1b20855cff7c9139e",
+      "lines": 812
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+      "sha256": "d8aba9e0904a7326c5a0066daf3f5b37d82bbadd84566c05c246fa58c061c8d4",
+      "lines": 1961
+    }
+  ],
+  "review": {
+    "summary": "Reviewed the telemetry module, its CLI reporter and the collector for secrets, logging and information leaks. The clearest defect is that the telemetry URL is logged and emitted in a JSON event with any embedded userinfo intact. Other findings are hypotheses that depend on deployment or on a hostile collector, and nothing secret such as a signing key reaches logs or responses in the supplied code.",
+    "findings": [
+      {
+        "title": "Telemetry URL with embedded credentials written to logs and JSON events",
+        "severity": "low",
+        "confidence": "high",
+        "file": "crates/golem-p2p-cli/src/telemetry/mod.rs",
+        "line": 594,
+        "prerequisites": "The operator sets --telemetry or GOLEM_P2P_TELEMETRY to a URL with userinfo (https://user:pass@collector/), or the registry advertises such a URL, on a closed network.",
+        "impact": "The password is written to the log at info level and to the JSON event stream, where it is visible to anyone who can read logs or events. The same URL is repeated in the warn line on failure.",
+        "evidence": "Line 594: info!(\"telemetry: reporting to {u} (opt out: --no-telemetry)\"); lines 604-613: out.event(\"telemetry\").field(\"url\", match &target { Some(Target::Fixed(u)) => Some(u.to_string()), ... }); line 750: warn!(\"telemetry: report to {url} failed: ...\"). url::Url::to_string keeps userinfo.",
+        "suggested_fix": "Log and emit only scheme, host and path (strip username and password, query and fragment) with a small helper, and reject userinfo in --telemetry at parse time, pointing users to a header or proxy instead.",
+        "validation_needed": "Unit test that a URL with credentials produces log and event output without the password. Demonstrated code defect: the string is formatted as-is.",
+        "lens": "leaks",
+        "module": "telemetry",
+        "id": "telemetry/leaks#1"
+      },
+      {
+        "title": "Store files written with default permissions expose network topology to other local users",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+        "line": 1341,
+        "prerequisites": "The collector runs on a shared host with a permissive umask, and another local user can read the --store directory.",
+        "impact": "nodes.json, minutes-*.jsonl and fine.jsonl hold node IDs, names, versions, relay URLs, the connection graph, NAT summaries and last error kinds. Local users can read this, and nodes.json also keeps full reports.",
+        "evidence": "write_atomic: std::fs::write(&tmp, data)? then rename; append() uses std::fs::OpenOptions::new().create(true).append(true).open(&path) with no mode; the store directory is created with std::fs::create_dir_all(&dir) at line 394. No set_permissions or mode(0o600) appears.",
+        "suggested_fix": "Create the store directory with mode 0700 and each file with mode 0600 (std::os::unix::fs::OpenOptionsExt / DirBuilderExt), or document that the store must sit in a private directory.",
+        "validation_needed": "Check the resulting file modes under a typical umask. Hypothesis: whether this matters depends on the host's sharing and the sensitivity the operator assigns to topology.",
+        "lens": "leaks",
+        "module": "telemetry",
+        "id": "telemetry/leaks#2"
+      },
+      {
+        "title": "Collector router serves full state, history and metrics with no authentication in code",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+        "line": 1357,
+        "prerequisites": "The listener is reachable and the proxy in front does not restrict every route to authenticated users, for example if only POST /v1/report is configured.",
+        "impact": "Anyone who reaches the collector can read every node's name, version, commit, OS, NAT booleans, home relay, connections (peer IDs and relay URLs), totals and last error kind through /v1/state, /v1/nodes, /v1/history and /metrics. This is more than the members' network needs to see, and it matches the lens's concern about detail given to remote parties.",
+        "evidence": "router() registers \"/v1/state\", \"/v1/nodes\", \"/v1/history\", \"/metrics\" and \"/\" with no auth layer; the module doc says the other routes must be protected by the proxy (nginx basic auth on master). Node JSON in state() includes \"nat\", \"commit\", \"last_error\" and \"home_relay\".",
+        "suggested_fix": "Enforce authentication in the service (a shared bearer token or header check on non-report routes) and fail closed when not configured, instead of relying only on deployment documentation. Alternatively, bind the non-report routes to a separate listener.",
+        "validation_needed": "Hypothesis: depends on deployment. Confirm the proxy configuration on master and whether the collector listens on a public address by default (default is 127.0.0.1:8091).",
+        "lens": "leaks",
+        "module": "telemetry",
+        "id": "telemetry/leaks#3"
+      },
+      {
+        "title": "Remote error body logged unescaped at warn level",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p-cli/src/telemetry/mod.rs",
+        "line": 705,
+        "prerequisites": "The configured collector or registry answers reports with a body containing control characters or terminal escape sequences, for example a hostile or compromised collector, or a MITM on plain HTTP.",
+        "impact": "The first 200 characters of the response body are printed to the operator's terminal or log through the warn line, so forged lines or escape sequences can reach it. The body is only truncated by chars, not stripped of control characters.",
+        "evidence": "Line 705: text.chars().take(200).collect::<String>(); the Display impl at line 666 formats through golem_p2p::membership::error_text(*s, body); the warn at lines 749-751 interpolates {e}. The control-character filtering inside error_text is not visible in the supplied files.",
+        "suggested_fix": "Strip or escape control characters from the body before logging (for example, keep only printable ASCII), or log only the status code and a fixed reason string.",
+        "validation_needed": "Hypothesis: check whether golem_p2p::membership::error_text already removes control characters; the file is not supplied. The directory is plain HTTP by design, so an on-path attacker can reach this path.",
+        "lens": "leaks",
+        "module": "telemetry",
+        "id": "telemetry/leaks#4"
+      }
+    ],
+    "limitations": [
+      "golem_p2p::membership::error_text, golem_p2p::signer, record.rs and dashboard.html are not supplied, so escaping in error_text and XSS in the dashboard JavaScript could not be checked.",
+      "The nginx/oauth2-proxy configuration on master is not in the supplied files, so the real exposure of the unauthenticated routes is unknown.",
+      "Behaviour of the iroh SelectedPath, Endpoint and net-report helpers (remote addresses, relay URLs) was not visible, so the claim that no IP addresses are sent rests on the module's own comments.",
+      "Semgrep's temp_dir hit in the collector test and the deterministic tool results were excluded, as instructed.",
+      "No runtime test was run; all findings are from reading the source."
+    ],
+    "lens": "leaks"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 52459,
+    "output_tokens": 5724,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.008107900000000001
+}

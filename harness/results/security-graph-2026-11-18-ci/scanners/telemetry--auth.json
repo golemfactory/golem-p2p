@@ -1,0 +1,105 @@
+{
+  "module": "telemetry",
+  "lens": "auth",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/telemetry.rs",
+      "sha256": "c4f78826a11a7d207d8f6e4f1e7cb5cedde7050863c8e8a1c839d2131cac6036",
+      "lines": 223
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/telemetry/mod.rs",
+      "sha256": "d44356d32854710c4105d83cd2df68e54ae44563f09a0ed1b20855cff7c9139e",
+      "lines": 812
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+      "sha256": "d8aba9e0904a7326c5a0066daf3f5b37d82bbadd84566c05c246fa58c061c8d4",
+      "lines": 1961
+    }
+  ],
+  "review": {
+    "summary": "Lens: authentication, authorization, membership and certificates for telemetry reports and the collector. The report signature and membership path in telemetry.rs is sound for outsiders: a report needs a signature from an identity that a certificate issued by the registry key covers. The findings below concern replay state across restarts, unauthenticated read routes in the collector itself, an endpoint binding that checks nothing, and per-identity rate limits that a member can multiply. None is a demonstrated outsider bypass; the first two need a test or a deployment check.",
+    "findings": [
+      {
+        "title": "Replay protection state is saved only once a minute and at shutdown, so a crash reopens the replay window",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+        "line": 753,
+        "prerequisites": "The collector process dies without a graceful shutdown (crash, OOM, kill -9) and restarts from nodes.json. The attacker holds a previously accepted signed report of a member, with its signature and certificate headers, from a source they can observe. Reports are only refused as replays when their timestamp is not newer than the stored last_ts_ms.",
+        "impact": "After the restart, last_ts_ms is up to about a minute older than the last accepted report. Any captured report whose timestamp falls inside that gap, and within the 5 min clock skew, is accepted again. This inflates the delta counters that feed network totals and the per-node rate and counts. It does not forge membership.",
+        "evidence": "Accept path: 'if prev.is_some_and(|p| report.ts_ms <= p.last_ts_ms) { return Err(refuse(StatusCode::CONFLICT, \"replay\")); }' and the stored state: 'last_ts_ms: report.ts_ms'. Persistence happens only in push_minute ('self.save_nodes();' at line 753, reached once per minute of samples) and at shutdown ('shared.lock().expect(\"poisoned\").save_nodes();' in run). A crash between these points loses last_ts_ms for every node that reported in that window.",
+        "suggested_fix": "Persist last_ts_ms (and the bucket) on every accepted report, or write nodes.json atomically with each accept and before responding 204. Alternatively reject any report whose ts_ms is not greater than the newest timestamp seen in the store's last write plus a margin. Add a test that restarts the collector without save_nodes and replays a report.",
+        "validation_needed": "Hypothesis. Write a test that accepts a report, drops the Collector without calling save_nodes, reopens from the store, and checks whether the same report is accepted. The code path is clear, but whether a crash reopens the window in practice depends on the deployment's restart behaviour.",
+        "lens": "auth",
+        "module": "telemetry",
+        "id": "telemetry/auth#1"
+      },
+      {
+        "title": "Read routes (state, nodes, history, metrics, dashboard) have no authentication in the router",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+        "line": 1357,
+        "prerequisites": "The collector is reachable beyond localhost and the proxy in front of it does not protect the GET routes. The module docs and the --listen default say to add authentication in front, so this depends on deployment. Nothing in the source enforces it.",
+        "impact": "Anyone who can reach the listener can read node IDs, node names, versions, commits, OS and arch, relay URLs, the peer graph of the network, NAT booleans, lifetime counters and link history, with no membership proof. This is information disclosure about a closed network, not a write.",
+        "evidence": "'.route(\"/v1/report\", post(report).layer(DefaultBodyLimit::max(MAX_REPORT_SIZE)))' followed by '.route(\"/\", get(dashboard))', '.route(\"/v1/state\", get(state))', '.route(\"/v1/history\", get(history))', '.route(\"/metrics\", get(metrics))' with no auth extractor or middleware. The docs say: 'Only the report route is meant to be public; put the others behind authentication'.",
+        "suggested_fix": "Make the read routes check a bearer token or a shared secret from a flag or env var in the collector itself, or bind a second listener for the report route only so that the public listener carries nothing else. Refuse to start with a non-loopback --listen unless an auth option is set. Add a test asserting that GET routes need a credential.",
+        "validation_needed": "Demonstrated in the source: no check exists in the router. Whether it is exposed depends on the deployment, which the source does not show. Confirm on the master host that oauth2-proxy or nginx covers every path except POST /v1/report.",
+        "lens": "auth",
+        "module": "telemetry",
+        "id": "telemetry/auth#2"
+      },
+      {
+        "title": "The certificate endpoint check compares the certificate with itself, so no endpoint binding is applied to reports",
+        "severity": "low",
+        "confidence": "high",
+        "file": "crates/golem-p2p/src/telemetry.rs",
+        "line": 111,
+        "prerequisites": "A holder of a valid membership certificate issued by the registry key for network 'net', covering identity X, but with an endpoint ID of some other node or of none in particular. The attacker also holds the secret key of identity X, so the report signature is valid.",
+        "impact": "The endpoint named in the certificate is read from the certificate and then used for the check. The check therefore cannot fail for endpoint reasons. A report is accepted for any covered identity whichever endpoint the certificate names, so the cert-to-node binding that peers rely on in the handshake is not applied to telemetry. Impact is limited because a covered identity key is still required.",
+        "evidence": "'let endpoint = EndpointId::from_bytes(&cert.payload().endpoint_id)' followed by 'policy.check_cert(&cert, endpoint, now)?;'. The endpoint passed in is taken from the same cert, so the value being compared is not independent of the certificate.",
+        "suggested_fix": "Do not derive the expected endpoint from the certificate. Require the endpoint from the report (or the node's known endpoint from the registry or the store) and pass that to check_cert, or document that telemetry deliberately ignores endpoint binding and state it in the telemetry module docs. Add a test where the cert endpoint differs from the expected one.",
+        "validation_needed": "Code reading shows the check is circular here. Whether check_cert also enforces an endpoint binding elsewhere is not visible in the supplied files (record.rs and membership.rs are missing), so confirm there before acting on it.",
+        "lens": "auth",
+        "module": "telemetry",
+        "id": "telemetry/auth#3"
+      },
+      {
+        "title": "Rate limit is keyed per signing identity, so one member with several covered identities gets several bursts",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+        "line": 508,
+        "prerequisites": "A member holds a membership certificate covering several identities (the certificate lists identities, and the record module allows up to 16 per record). The member holds the keys of those identities.",
+        "impact": "Each identity has its own token bucket and its own entry in the node map and metrics, so one member can send about 3 reports per identity burst and then one every min_interval per identity. This defeats the per-node limit that the docs promise and can fill MAX_NODES with that member's identities. This is member-only abuse, but it crosses the identity boundary the limit is meant to enforce.",
+        "evidence": "'let mut bucket = prev.and_then(|p| p.bucket).unwrap_or(Bucket { tokens: RATE_BURST, at_ms: now, });' where prev is self.nodes.get(&id) and id is the signing identity. The docs say 'per node at most one report per --min-report-interval on average'.",
+        "suggested_fix": "Key the bucket by the member (the certificate's endpoint ID, or a canonical identity of the cert) rather than the signing identity, and count all of a certificate's identities against one bucket. Alternatively cap the number of identities per certificate that the collector accepts for reporting.",
+        "validation_needed": "Code reading shows the keying. Confirm with a test that one certificate covering two identities gets two buckets. Whether a real network issues multi-identity certificates is not visible from the supplied files.",
+        "lens": "auth",
+        "module": "telemetry",
+        "id": "telemetry/auth#4"
+      }
+    ],
+    "limitations": [
+      "record.rs, membership.rs and signer.rs are not supplied; check_cert, the certificate identity limit, and MembershipPolicy internals were not reviewed.",
+      "The registry's removal and revocation behaviour is not in the supplied files. A removed member can probably report until its certificate expires, but that could not be checked.",
+      "Deployment configuration (nginx, oauth2-proxy on master, the registry's certificate lifetime, and whether the collector is reachable directly) is not in the source; findings about exposure are conditional on it.",
+      "Known limits from the brief (registry first come first served, unsigned certificate in records, flood of valid records, plain HTTP) were excluded and not re-reported.",
+      "The tests were read but not run."
+    ],
+    "lens": "auth"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 52460,
+    "output_tokens": 7222,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.008857
+}

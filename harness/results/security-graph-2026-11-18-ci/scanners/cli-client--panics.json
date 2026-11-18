@@ -1,0 +1,104 @@
+{
+  "module": "cli-client",
+  "lens": "panics",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p-cli/src/main.rs",
+      "sha256": "b577491be6114872a2d7710629e71d296b3cc9e3fbefa918b463f6291466cb04",
+      "lines": 823
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/parse.rs",
+      "sha256": "8aeb7929755179d9ae600b70a1e812f59393d0aa7b628bc8a8339353adcdf34a",
+      "lines": 220
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/out.rs",
+      "sha256": "998ea6a4cad3214dfb215ee8bb9e743749f55494df8fdef1a610bb2dfd1a4cbd",
+      "lines": 283
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/observe.rs",
+      "sha256": "1100ac7ee6f52d204cd969ca12913c85096c1bebdd00278f02213e105b33040c",
+      "lines": 378
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/probe.rs",
+      "sha256": "841a787691242a386597d98d938cf26d673845a4df096e34e82a3249cbf89ed6",
+      "lines": 1255
+    },
+    {
+      "file": "crates/golem-p2p/src/lib.rs",
+      "sha256": "0c3a1c44e97b2a89a5a3969eba9d2781806bec259fae8bb9781d2a889803d838",
+      "lines": 91
+    }
+  ],
+  "review": {
+    "summary": "Reviewed the CLI client for concurrency, panics and unwraps. One demonstrated remote-triggerable panic: the download status-line error path slices a remote-controlled String at a fixed byte offset, which panics on a non-ASCII boundary. Two lower-severity items: blocking stdout writes under a std mutex inside async tasks, and panics on huge user-supplied durations. Most other unwraps and expects are on local, bounded, or non-poisoning paths.",
+    "findings": [
+      {
+        "title": "Download status error path slices remote text at a fixed byte offset and can panic",
+        "severity": "high",
+        "confidence": "high",
+        "file": "crates/golem-p2p-cli/src/probe.rs",
+        "line": 789,
+        "prerequisites": "The client runs download() (probe --bulk does not download, but bench and soak do) against a malicious listen node that replies with a status line that does not start with 'ok bytes=' and is not a 'refused' reply. read_status_line returns up to about 256 bytes or more if no newline appears, so the status can be longer than 100 bytes. Byte 100 must fall inside a multi-byte UTF-8 character, which the attacker controls (for example 99 ASCII bytes followed by a 2-byte character).",
+        "impact": "Panic in the client task that aborts the whole CLI command (tokio::main unwinds to process exit 101). A malicious listener can crash probe, bench or soak at will. The error path is reached only when the announced size is wrong, so it is a demonstrated code defect reachable from remote bytes, not a hypothetical.",
+        "evidence": "let announced: u64 = status.strip_prefix(\"ok bytes=\").and_then(|n| n.trim().parse().ok()).with_context(|| { format!(\"listener does not support downloads (an older golem-p2p?): {}\", &status[..status.len().min(100)]) })?; with status built by String::from_utf8_lossy(&buf) in read_status_line, which allows buf.len() > 256 before breaking.",
+        "suggested_fix": "Truncate on a char boundary, for example with status.chars().take(100).collect::<String>() or by truncating the bytes before from_utf8_lossy. Add a unit test with a multi-byte character straddling byte 100.",
+        "validation_needed": "Demonstrated code defect by reading. Confirm with a unit test that calls the status parsing with a 100-byte-straddling UTF-8 string, or with a fake listener that sends such a line.",
+        "lens": "panics",
+        "module": "cli-client",
+        "id": "cli-client/panics#1"
+      },
+      {
+        "title": "Blocking stdout write while holding a std mutex inside async tasks",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/out.rs",
+        "line": 77,
+        "prerequisites": "The stdout consumer of --json output stops reading (pipe full, controller hung). Events are emitted from async tasks (observer tasks, pinger, telemetry) on tokio worker threads.",
+        "impact": "Each emit blocks a runtime worker thread inside writeln! while the sealed std::sync::Mutex is held, so other emitters block on the lock as well. Enough stalled workers can freeze connection handling and the request path. This is a hypothesis that needs a test with a non-reading stdout pipe; it is not demonstrated.",
+        "evidence": "fn write(&self, line: &str, last: bool) { let mut sealed = self.inner.sealed.lock().expect(\"poisoned\"); if *sealed { return; } let mut stdout = std::io::stdout().lock(); let _ = writeln!(stdout, \"{line}\"); let _ = stdout.flush(); *sealed = last; }",
+        "suggested_fix": "Send events over a bounded channel to one dedicated writer thread, or use spawn_blocking for the write, and drop or count events when the channel is full instead of blocking the caller.",
+        "validation_needed": "Hypothesis: run a probe --json with stdout piped to a process that stops reading, and check whether the runtime stalls. The sealed lock also needs a check for lock poisoning, which is unlikely since nothing panics while holding it.",
+        "lens": "panics",
+        "module": "cli-client",
+        "id": "cli-client/panics#2"
+      },
+      {
+        "title": "Huge user-supplied durations overflow Instant arithmetic and panic",
+        "severity": "low",
+        "confidence": "high",
+        "file": "crates/golem-p2p-cli/src/probe.rs",
+        "line": 191,
+        "prerequisites": "The operator passes a very large --duration or --timeout (parse::duration accepts any value that Duration::try_from_secs_f64 accepts, up to about 1.8e19 seconds). This is local operator input, not remote input.",
+        "impact": "tokio Instant addition panics on overflow, so probe aborts at startup with a panic instead of a clean argument error. Exit code and message are unhelpful, but the impact is limited to the local operator. The same pattern appears in end + timeout on line 193 and in upload() start + t, which are not reached remotely.",
+        "evidence": "let end = tokio::time::Instant::now() + duration; // A request in flight at the end may take up to one more timeout. let hard_end = end + timeout;",
+        "suggested_fix": "Use checked_add in parse::duration or at the call sites, and return a clap error when the deadline cannot be represented; cap the accepted range to something like a few days.",
+        "validation_needed": "Demonstrated by arithmetic reasoning: run probe with --duration 18446744073709551615 and confirm the panic. Low practical risk, since the input comes from the operator.",
+        "lens": "panics",
+        "module": "cli-client",
+        "id": "cli-client/panics#3"
+      }
+    ],
+    "limitations": [
+      "bench.rs, soak.rs, listen.rs, telemetry, registry and record.rs were not supplied. Their unwraps, Duration arithmetic and task joins could not be checked, and the listener side of the wire protocol (what a malicious listen node can send) is inferred only from the client code.",
+      "The Endpoint internals in golem_p2p endpoint.rs (request timeouts, connection handling, Connection::paths and home_relay_status) were not supplied, so whether requests without an explicit timeout can hang, and whether the watch channels can stall, is unknown.",
+      "The clippy lint locations (expect on sealed/first_direct locks, cast_possible_truncation, arithmetic_side_effects in out.rs and probe.rs) were checked by reading. The main cases do not show reachable panics: the locks hold no code that can panic, the casts are on bounded values, and the Stats sum is over locally measured durations.",
+      "No runtime testing was done, so the medium-confidence concurrency finding is a hypothesis."
+    ],
+    "lens": "panics"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 55576,
+    "output_tokens": 6778,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0089466
+}

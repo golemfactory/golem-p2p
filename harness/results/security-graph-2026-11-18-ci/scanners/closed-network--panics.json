@@ -1,0 +1,100 @@
+{
+  "module": "closed-network",
+  "lens": "panics",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/membership.rs",
+      "sha256": "f08e6f76729fc89bbd8b1b946c12cd6772e309000d9cce96ca61255852d8f577",
+      "lines": 524
+    },
+    {
+      "file": "crates/golem-p2p/src/registry.rs",
+      "sha256": "1d59d61ebfd29293efe8e04b8717d755255946a6d4cff6ee4f4993dc92c4e621",
+      "lines": 562
+    },
+    {
+      "file": "crates/golem-p2p/src/discovery.rs",
+      "sha256": "acf74f06bebf66a23628bdeec86d3292409c7461eae6738d12c3962a67c4a135",
+      "lines": 329
+    },
+    {
+      "file": "crates/golem-p2p/src/lookup.rs",
+      "sha256": "d95a3dca506321926ea4d699dd346b16ccbddd6613e9fe065b507d1ed4b5a07e",
+      "lines": 43
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/registry.rs",
+      "sha256": "077bd7dbdf4e590634ff3f37a20ce5bce654b3aaf6b71681a72d0ca6f5aa7930",
+      "lines": 254
+    }
+  ],
+  "review": {
+    "summary": "Reviewed the closed-network files through the concurrency, panics and unwraps lens. No remote-reachable panic was demonstrated: decoded certificate times are clamped, lengths are bounded before use, and body reads are size-limited. The main concern is the registry's std Mutex held across blocking file I/O in async handlers, plus a few local-operator and CLI race or overflow issues that are lower severity.",
+    "findings": [
+      {
+        "title": "Registry holds a std Mutex across blocking file I/O and a full state clone in async handlers",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p/src/registry.rs",
+        "line": 361,
+        "prerequisites": "Any account holder (or the admin) issues PUT or DELETE on /v1/nodes or account changes while the state file lives on slow storage. No attacker-controlled panic is needed.",
+        "impact": "mutate() takes the std Mutex, clones the whole RegistryState, then calls st.save(), which does a synchronous write, sync_all and rename on a tokio worker thread while the guard is held. Every concurrent /v1/certify, /v1/info and listing handler blocks on the same lock, so one slow fsync stalls certification for all nodes and ties up runtime threads. The clone is also O(total state) per mutation. This is a demonstrated code pattern; the size of the stall is a hypothesis that needs a load or slow-disk test.",
+        "evidence": "let mut st = s.state.lock().expect(\"poisoned\"); let before = st.clone(); let out = f(&mut st)?; if let Err(e) = st.save(&s.path) { *st = before; ... } (save at line 174 calls write_private(...) and f.sync_all())",
+        "suggested_fix": "Mutate a clone or a small journal outside the lock, or use tokio::sync::Mutex with spawn_blocking around the file write, so the lock is never held across blocking I/O. Replace expect(\"poisoned\") with explicit handling so one panic does not turn into permanent 500s on every later request.",
+        "validation_needed": "Benchmark /v1/certify latency while PUT /v1/nodes runs against a state file on a throttled disk; confirm the stall and the runtime worker occupancy.",
+        "lens": "panics",
+        "module": "closed-network",
+        "id": "closed-network/panics#1"
+      },
+      {
+        "title": "certify computes now + cert_lifetime_s unchecked, under the lock, so a bad state-file value poisons the registry",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/registry.rs",
+        "line": 216,
+        "prerequisites": "An operator or someone with write access to the 0600 state file sets cert_lifetime_s close to u64::MAX. RegistryState::load only validates the signing key, not the lifetime, and init's 60 s to 7 day bounds do not apply on load.",
+        "impact": "now + self.cert_lifetime_s overflows: a panic in debug builds, a wrapped expiry in release. The panic happens inside the certify handler while s.state's guard is held, so the Mutex is poisoned. Every later handler then panics on expect(\"poisoned\") at lines 361, 373, 392, 469 and 542, a permanent registry outage until restart. Remote input does not reach this value directly. A lifetime above MAX_CERT_LIFETIME is also issued without any check, which peers would refuse.",
+        "evidence": "expires_at: now + self.cert_lifetime_s, inside certify(); load() only calls st.key()?; handlers use s.state.lock().expect(\"poisoned\")",
+        "suggested_fix": "Validate cert_lifetime_s in load() against the same bounds as init (60 s to MAX_CERT_LIFETIME), use checked_add in certify, and return an error instead of panicking under the lock.",
+        "validation_needed": "Unit test: load a state file with cert_lifetime_s = u64::MAX and call certify; expect a clean error, not a panic or poisoned lock.",
+        "lens": "panics",
+        "module": "closed-network",
+        "id": "closed-network/panics#2"
+      },
+      {
+        "title": "CLI account add creates the account on the registry before checking that the token file can be written",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/registry.rs",
+        "line": 218,
+        "prerequisites": "The operator runs registry account add with a --token-out path that appears between the exists() check and the write (a race), or the path is unwritable. write_secret is not in the supplied source, so its create-new behaviour is unknown.",
+        "impact": "The POST at line 217 creates the account and returns its only copy of the token. If write_secret then fails, the token is lost, the account name is permanently taken (a later add gets 409), and the operator cannot recover without an admin account removal. This is a check-then-use ordering problem, not a remote one.",
+        "evidence": "if token_out.exists() { bail!(...) } let token = call(&c, \"POST\", &format!(\"v1/accounts/{name}\"), Some(&admin)).await?; write_secret(&token_out, &format!(\"{}\\n\", token.trim()))?;",
+        "suggested_fix": "Write the token file with create_new before the remote call, or write to a temporary file and rename after success, so a local failure happens before the account exists.",
+        "validation_needed": "Confirm write_secret's behaviour in crates/golem-p2p-cli/src/main.rs; test with an unwritable --token-out directory and check whether the account exists afterwards.",
+        "lens": "panics",
+        "module": "closed-network",
+        "id": "closed-network/panics#3"
+      }
+    ],
+    "limitations": [
+      "Not supplied: record.rs (VerifiedRecord, MAX_RECORD_SIZE, MAX_CLOCK_SKEW), signer.rs, store.rs, lib.rs, directory.rs, main.rs (shutdown_signal, write_secret, parse helpers) and the CLI's startup code, so panic reachability through those is unverified.",
+      "Whether the registry runs in a multi-threaded tokio runtime, and how big the state file is in deployment, are unknown; the blocking-I/O finding depends on both.",
+      "The clippy lint locations supplied (for example registry.rs:176, 193, 220, 361, 373, 392, 469, 542 and discovery.rs:156, 188, 270) were reviewed as leads only; the expect calls on state invariants (key(), policy()) were judged unreachable from input, given load() validates the key.",
+      "Authorization, token-hash and certificate-trust logic were outside this lens and were not assessed.",
+      "No tests were run; all findings are code-reading results. The low-severity findings are hypotheses needing tests."
+    ],
+    "lens": "panics"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 31324,
+    "output_tokens": 6427,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0063459
+}

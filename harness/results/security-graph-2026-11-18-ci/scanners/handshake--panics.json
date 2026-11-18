@@ -1,0 +1,91 @@
+{
+  "module": "handshake",
+  "lens": "panics",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/endpoint.rs",
+      "sha256": "920391c16aced7b2daac6951cb0af45b7a9557b04bb9cb75652961f320b1af63",
+      "lines": 2328
+    },
+    {
+      "file": "crates/golem-p2p/src/wire.rs",
+      "sha256": "68526624080bff28255ecd7ab05f7b587650516f9e36d437f44610a191faad94",
+      "lines": 187
+    },
+    {
+      "file": "crates/golem-p2p/src/error.rs",
+      "sha256": "dc5435fff4367a692429fe25d68391c2f1e9f2e4b831b8dae593285c439e00a9",
+      "lines": 81
+    }
+  ],
+  "review": {
+    "summary": "Reviewed endpoint.rs, wire.rs and error.rs through the concurrency, panic and unwrap lens. No remote-input panic was found: frame sizes are bounded before allocation (wire.rs:161-177), record verification precedes use, and the expect calls on mutexes guard short non-panicking sections. The findings below are local or check-then-act issues, and none is remotely triggerable as a panic.",
+    "findings": [
+      {
+        "title": "Connection cap is checked against a snapshot taken before the handshake, so concurrent handshakes can overshoot max_connections",
+        "severity": "low",
+        "confidence": "high",
+        "file": "crates/golem-p2p/src/endpoint.rs",
+        "line": 1095,
+        "prerequisites": "A remote peer opens many QUIC connections at once. Up to 128 handshakes (MAX_PENDING_HANDSHAKES) can run in parallel, and each handle_incoming task runs accept_incoming independently.",
+        "impact": "Each handshake reads conns.len() at line 1095 and compares it at line 1100, but registration happens only after several awaits (lines 1104-1204). Many handshakes can pass the check together, so the number of registered connections can exceed config.max_connections (default 1024) by up to about 127. This is a demonstrated code defect in the check-then-act ordering, though the overshoot is bounded.",
+        "evidence": "let open = self.conns.lock().expect(\"poisoned\").len(); ... if open >= self.config.max_connections { incoming.refuse(); return false; } ... self.register(conn, peer, send, recv, local_rx, Direction::Incoming);",
+        "suggested_fix": "Reserve a slot atomically before the handshake, for example with a second semaphore sized max_connections acquired with try_acquire_owned and moved into the registered Connection. Alternatively re-check the count under the conns lock inside register and close the connection if the cap is already reached.",
+        "validation_needed": "A test that opens about 200 concurrent incoming handshakes against max_connections of 10 and counts the registered connections. The demonstrated part is the ordering; the size of the overshoot depends on scheduling.",
+        "lens": "panics",
+        "module": "handshake",
+        "id": "handshake/panics#1"
+      },
+      {
+        "title": "request_timeout of Duration::MAX (or any huge value) panics on Instant overflow in open_bi",
+        "severity": "low",
+        "confidence": "high",
+        "file": "crates/golem-p2p/src/endpoint.rs",
+        "line": 1298,
+        "prerequisites": "The application sets Builder::request_timeout to a very large Duration, such as Duration::MAX as a way of saying no timeout. The panic is local and needs no remote input.",
+        "impact": "Adding a huge Duration to tokio::time::Instant::now() panics with an overflow. The panic happens in request_from or open_bi, in the caller's task, before any stream is opened.",
+        "evidence": "let deadline = timeout.map(|t| tokio::time::Instant::now() + t);  (request_timeout is stored unchecked by Builder::request_timeout at line 365-366: self.config.request_timeout = t;)",
+        "suggested_fix": "Validate the configured timeout in Builder::request_timeout, clamping it to a sane maximum, or compute the deadline with checked_add and treat overflow as no deadline.",
+        "validation_needed": "A unit test that sets request_timeout(Duration::MAX) and calls request on a connected pair. This is a demonstrated panic on a documented-style input, but it is reachable only through local configuration.",
+        "lens": "panics",
+        "module": "handshake",
+        "id": "handshake/panics#2"
+      },
+      {
+        "title": "Sequence number computation adds 1 to min_seq without a checked addition, so min_seq of u64::MAX overflows",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p/src/endpoint.rs",
+        "line": 723,
+        "prerequisites": "The application calls Builder::min_seq with u64::MAX or another value near the limit, for example from a persisted sequence number that was corrupted. The same expression also appears in certify at line 760.",
+        "impact": "In debug builds, prev_seq + 1 panics during bind, which makes startup fail. In release builds it wraps to 0, and the max with the clock value hides the wrap. Either way the strictly increasing sequence property the comment promises is lost. Not remotely reachable.",
+        "evidence": "let seq = (prev_seq + 1).max(now.as_micros() as u64);  (bind passes self.min_seq as prev_seq at line 466 and 553)",
+        "suggested_fix": "Use prev_seq.saturating_add(1) in both places, so the clock value takes over at the limit, and document min_seq as capped.",
+        "validation_needed": "A debug-build test with min_seq(u64::MAX) that calls bind. Hypothesis about the caller's persisted values, which are outside this source.",
+        "lens": "panics",
+        "module": "handshake",
+        "id": "handshake/panics#3"
+      }
+    ],
+    "limitations": [
+      "record.rs, store.rs, discovery.rs, membership.rs, addrs.rs, lookup.rs and signer.rs were not supplied. Lock ordering between the store's internal locks and the conns mutex, and whether VerifiedRecord::verify or the store can panic, are unverified.",
+      "Whether iroh's Connection, SendStream and RecvStream methods can block or panic is outside the source. The analysis treats them as non-panicking.",
+      "Mutex poisoning (expect(\"poisoned\")) was treated as unreachable because the guarded sections do not panic; this was not verified against the store module.",
+      "Per-stream tasks in stream_acceptor and handle_app_stream can hold up to 256 streams per connection for up to 10 s each. The bound comes from QUIC stream limits and the connection cap, and no test of its memory impact was available.",
+      "The clippy lint locations were checked only where they are reachable from the code shown. Arithmetic on the local clock and the cast at line 723 were treated as false positives unless noted above.",
+      "Behaviour under the test suite, which was not supplied, and under real network timing was not observed."
+    ],
+    "lens": "panics"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 48277,
+    "output_tokens": 10238,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.009946700000000001
+}

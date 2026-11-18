@@ -1,0 +1,120 @@
+{
+  "module": "telemetry",
+  "lens": "panics",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/telemetry.rs",
+      "sha256": "c4f78826a11a7d207d8f6e4f1e7cb5cedde7050863c8e8a1c839d2131cac6036",
+      "lines": 223
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/telemetry/mod.rs",
+      "sha256": "d44356d32854710c4105d83cd2df68e54ae44563f09a0ed1b20855cff7c9139e",
+      "lines": 812
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+      "sha256": "d8aba9e0904a7326c5a0066daf3f5b37d82bbadd84566c05c246fa58c061c8d4",
+      "lines": 1961
+    }
+  ],
+  "review": {
+    "summary": "Three concrete integer-overflow paths in collector.rs can run while the shared Mutex is held. A panic there poisons the lock, and every later handler and the sampler then panic on expect(poisoned). Remote input reaches them through member-signed reports, which validate() does not bound. Behaviour differs by build: debug or overflow-checks builds panic, release builds wrap. Lock hold times during disk writes are a secondary concern. No finding was reproduced by a test; all are code-reading hypotheses or demonstrated-by-reading defects that need a test.",
+    "findings": [
+      {
+        "title": "Unbounded interval_s makes status() overflow under the collector lock",
+        "severity": "high",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+        "line": 566,
+        "prerequisites": "An attacker holding a valid membership certificate (an insider or a compromised member) signs a report with interval_s around 1e16 or more. validate() only checks is_finite, so the report is accepted and stored in nodes.",
+        "impact": "Under debug or overflow-checks builds, 3 * interval overflows and panics inside status(), which runs under the shared Mutex in state(), metrics(), tick() and merged_links(). The mutex is poisoned and every later lock().expect(poisoned) panics, so the collector stops serving until restart. In release builds the arithmetic wraps, so the node is misclassified as online, stale or offline for no valid reason.",
+        "evidence": "let interval = (n.report.interval_s.max(1.0) * 1000.0) as u64; ... if age <= 3 * interval + 2000 { \"online\" } else if age <= (6 * interval).max(60_000) { \"stale\" }. Also validate(): if !r.interval_s.is_finite() || !r.delta_s.is_finite() { return Err(\"invalid number\") } with no upper bound.",
+        "suggested_fix": "Reject interval_s and delta_s above a sane maximum (for example 3600 s) in validate(), and use saturating_mul and saturating_add in status(). Add a test that sends interval_s of 1e16 and checks that the collector stays responsive.",
+        "validation_needed": "Demonstrated by reading the code. Run a debug-build test that accepts such a report and then calls state(); confirm the panic and the later poisoned-lock panics.",
+        "lens": "panics",
+        "module": "telemetry",
+        "id": "telemetry/panics#1"
+      },
+      {
+        "title": "Attacker-chosen path_s overflows when converted to milliseconds under the lock",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+        "line": 630,
+        "prerequisites": "A member sends a report whose connection has path_s greater than about 1.8e16 (u64::MAX / 1000). validate() does not check path_s, and the report's peer and relay fields are otherwise valid.",
+        "impact": "In debug or overflow-checks builds, s * 1000 panics inside merged_links(), which runs under the shared Mutex in state(), metrics() and tick(). This poisons the mutex and takes down the collector, as in the previous finding.",
+        "evidence": "path_since: latest.c.path_s.map(|s| latest.ts.saturating_sub(s * 1000)),  where path_s is Option<u64> in Conn and is deserialized directly from the signed report body.",
+        "suggested_fix": "Use s.saturating_mul(1000) here, or cap path_s in validate() to the report's own interval and to the retention window. Add a test with path_s set to u64::MAX.",
+        "validation_needed": "Hypothesis that needs a test: in a debug or test build, post such a report and then call state(); expect an arithmetic overflow panic.",
+        "lens": "panics",
+        "module": "telemetry",
+        "id": "telemetry/panics#2"
+      },
+      {
+        "title": "Counter sums overflow with attacker-chosen delta values under the lock",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+        "line": 204,
+        "prerequisites": "A member sends reports whose delta counters (conns_new, requests_ok and similar) are near u64::MAX. Two such reports in one sampling window, or a report added to already-large pending totals, are enough. validate() does not check counter magnitudes.",
+        "impact": "In debug or overflow-checks builds, the += in Counts::add panics inside accept(), which holds the shared Mutex. The lock is poisoned and the collector stops serving. Later sums (aggregate, state's hour sum) can overflow the same way. In release builds the sums silently wrap and the dashboard totals become wrong.",
+        "evidence": "fn add(&mut self, o: &Counts) { self.conns_new += o.conns_new; self.conns_failed += o.conns_failed; ... } called from accept_inner with counts built from report.delta.conns_new and similar fields, all deserialized from the body.",
+        "suggested_fix": "Use saturating_add in Counts::add and in aggregate() and state(). Optionally cap per-report delta counters in validate() against the report's interval.",
+        "validation_needed": "Demonstrated by reading the code. A unit test that accepts two reports with conns_new of u64::MAX - 1 and then calls tick() would show the panic in debug builds.",
+        "lens": "panics",
+        "module": "telemetry",
+        "id": "telemetry/panics#3"
+      },
+      {
+        "title": "A single panic under the shared Mutex takes the whole collector down and silently stops sampling",
+        "severity": "medium",
+        "confidence": "high",
+        "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+        "line": 1352,
+        "prerequisites": "Any panic while the collector Mutex is held, such as the overflows in the earlier findings or any future unwrap in Collector methods. No attacker action is needed beyond the first panic.",
+        "impact": "The Mutex is poisoned. Every subsequent expect(poisoned) fails in tick_loop (line 1352), report (1397), state (1423), nodes (1428), history (1448), metrics (1463) and shutdown (141). The sampler task is spawned and never joined, so its panic is only logged by tokio and sampling stops silently while the HTTP server keeps answering 500s or closing connections. Recovery requires a restart.",
+        "evidence": "async fn tick_loop(shared: Shared) { loop { ... shared.lock().expect(\"poisoned\").tick(now_ms()); } } and async fn report(...) { let r = s.lock().expect(\"poisoned\").accept(&body, &headers, now_ms()); ... }",
+        "suggested_fix": "Recover from poisoning with lock().unwrap_or_else(|e| e.into_inner()) in every handler and in tick_loop, or use parking_lot::Mutex, which does not poison. Also log and restart the sampler if its task ends. Keep the panic surface small by fixing the overflows above.",
+        "validation_needed": "Demonstrated by reading the code. A test that poisons the mutex (for example by panicking inside accept under a test hook) and then calls the report route would show that later requests fail.",
+        "lens": "panics",
+        "module": "telemetry",
+        "id": "telemetry/panics#4"
+      },
+      {
+        "title": "Blocking file writes and a full state dump run while the request lock is held",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+        "line": 753,
+        "prerequisites": "A minute boundary is crossed (push_minute, every 60 ticks), or the hourly fine-file rewrite runs. Many nodes are stored (up to MAX_NODES, which is 10000). Report and dashboard requests are arriving at the same time.",
+        "impact": "push_minute calls save_nodes, which serializes every stored NodeState and writes nodes.json synchronously. push_fine rewrites fine.jsonl synchronously. Both run inside tick() under the std Mutex. Report and dashboard handlers wait for the lock and block a Tokio worker thread while they wait. Under load this adds latency spikes that can cause the 5 s reporting timeout to fire on members.",
+        "evidence": "fn push_minute(&mut self, m: Sample, now: u64) { ... self.save_nodes(); } and fn save_nodes(&self) { let text = serde_json::to_string(&self.nodes).expect(\"encode nodes\"); ... write_atomic(&dir.join(\"nodes.json\"), ...) }, while tick_loop calls shared.lock().expect(\"poisoned\").tick(now_ms()) on the async runtime.",
+        "suggested_fix": "Snapshot the data under the lock and do the file writes on a blocking thread (tokio::task::spawn_blocking) or on a dedicated writer task fed by a channel. Use tokio::sync::Mutex or a message-passing design so that no synchronous I/O runs under the lock on the async runtime.",
+        "validation_needed": "Hypothesis that needs a load test: measure report latency during a minute boundary with thousands of stored nodes.",
+        "lens": "panics",
+        "module": "telemetry",
+        "id": "telemetry/panics#5"
+      }
+    ],
+    "limitations": [
+      "The record.rs and membership.rs modules were not supplied; the bounds on cert payloads and identity counts were taken from the brief, not from source.",
+      "The registry client (RegistryClient::call) timeout and the dashboard HTML were not supplied, so a hang in the telemetry target lookup could not be checked.",
+      "Release profile overflow-checks and debug-assertions settings were not supplied; whether the overflow findings panic or wrap depends on that setting.",
+      "Caller behaviour of the listener and the shutdown_signal helper in crate::main was not supplied; shutdown hang analysis is limited to this file.",
+      "Dependency behaviour of axum, reqwest and serde_json (for example whether a panicking handler aborts the server) was assumed, not checked."
+    ],
+    "lens": "panics"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 55100,
+    "output_tokens": 7622,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.009321
+}

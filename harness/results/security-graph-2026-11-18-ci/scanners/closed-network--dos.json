@@ -1,0 +1,115 @@
+{
+  "module": "closed-network",
+  "lens": "dos",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/membership.rs",
+      "sha256": "f08e6f76729fc89bbd8b1b946c12cd6772e309000d9cce96ca61255852d8f577",
+      "lines": 524
+    },
+    {
+      "file": "crates/golem-p2p/src/registry.rs",
+      "sha256": "1d59d61ebfd29293efe8e04b8717d755255946a6d4cff6ee4f4993dc92c4e621",
+      "lines": 562
+    },
+    {
+      "file": "crates/golem-p2p/src/discovery.rs",
+      "sha256": "acf74f06bebf66a23628bdeec86d3292409c7461eae6738d12c3962a67c4a135",
+      "lines": 329
+    },
+    {
+      "file": "crates/golem-p2p/src/lookup.rs",
+      "sha256": "d95a3dca506321926ea4d699dd346b16ccbddd6613e9fe065b507d1ed4b5a07e",
+      "lines": 43
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/registry.rs",
+      "sha256": "077bd7dbdf4e590634ff3f37a20ce5bce654b3aaf6b71681a72d0ca6f5aa7930",
+      "lines": 254
+    }
+  ],
+  "review": {
+    "summary": "Reviewed membership certificate decoding and checks, the registry HTTP server and state persistence, and the directory and registry HTTP clients, through the input-parsing, DoS and resource-bounds lens. Certificate decoding and the client body reads are size-bounded with timeouts. The main gaps are server-side: registrations are unbounded, every mutation clones and rewrites the whole state under a blocking lock, and the server has no visible timeouts or concurrency limits. The unbounded-growth and lock findings are code defects; their performance impact is a hypothesis that needs a load test.",
+    "findings": [
+      {
+        "title": "Node registrations are unbounded and each one rewrites the whole state file",
+        "severity": "medium",
+        "confidence": "high",
+        "file": "crates/golem-p2p/src/registry.rs",
+        "line": 499,
+        "prerequisites": "An account token holder (any account; accounts are created by the admin) sends PUT /v1/nodes/{id} in a loop with fresh 20-byte node IDs.",
+        "impact": "Nothing caps the number of registered nodes per account or in total, so the state map and the state file grow without bound. Each mutation clones the entire state (line 362) and serializes and fsyncs the whole JSON file (lines 176 and 364), so per-request cost and disk writes grow with the total registered count, and the registry slows down and can run out of disk.",
+        "evidence": "In add_node: \"_ => { st.nodes.insert(id.to_string(), account.clone()); Ok(account) }\" and in mutate: \"let before = st.clone(); let out = f(&mut st)?; if let Err(e) = st.save(&s.path)\". save() does serde_json::to_string_pretty(self) and write_private(...) with sync_all().",
+        "suggested_fix": "Add a configurable maximum number of nodes per account and in total, refuse with 429 or 507 above it, and consider a per-account quota. Persist incrementally (append-only log or a database) instead of rewriting the full JSON on every change, and avoid cloning the full state for rollback (apply the change to a copy of the single entry, or undo it).",
+        "validation_needed": "Demonstrated code defect for the missing cap and the full-state clone and rewrite per call. Measuring how far the latency grows with N (for example 10^5 to 10^6 nodes) needs a test with the registry server.",
+        "lens": "dos",
+        "module": "closed-network",
+        "id": "closed-network/dos#1"
+      },
+      {
+        "title": "State mutex is held across blocking file writes and fsync inside async handlers",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p/src/registry.rs",
+        "line": 361,
+        "prerequisites": "Any valid account or admin token holder sends many PUT or DELETE requests to /v1/nodes or /v1/accounts.",
+        "impact": "mutate() takes a std::sync::Mutex and then calls synchronous file I/O with sync_all, inside an async axum handler. That blocks a tokio worker thread for the duration of each save, and every other handler, including /v1/certify, which needs the same lock, waits behind it. Sustained writes can starve the runtime and delay certificate issuance for honest nodes.",
+        "evidence": "fn mutate<T>(s: &Shared, f: ...) { let mut st = s.state.lock().expect(\"poisoned\"); let before = st.clone(); let out = f(&mut st)?; if let Err(e) = st.save(&s.path) { ... } } and in the handlers: async fn add_node(...) calls mutate(&s, ...) directly. The save path ends in std::fs::File sync_all via write_private.",
+        "suggested_fix": "Run the save on a blocking thread (tokio::task::spawn_blocking) or move persistence to a background writer, and keep the critical section short. Also replace expect(\"poisoned\") with error handling so a panic in one handler does not turn into a panic for every later request.",
+        "validation_needed": "Code-level blocking is visible in the source. The size of the throughput drop depends on the disk and needs a benchmark with concurrent PUTs and certify requests.",
+        "lens": "dos",
+        "module": "closed-network",
+        "id": "closed-network/dos#2"
+      },
+      {
+        "title": "Certify endpoint does signature work for every anonymous request with no rate limit",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p/src/registry.rs",
+        "line": 388,
+        "prerequisites": "Any unauthenticated client on the network that can reach the registry, behind the TLS proxy, sends many POST /v1/certify requests with valid or near-valid records of up to MAX_RECORD_SIZE bytes.",
+        "impact": "Each request runs VerifiedRecord::verify (up to 17 signature checks, per the record limits) before any cheap check, and then, if the identities are registered, signs a new certificate. Nothing in the server bounds this rate, so an anonymous sender can use CPU in proportion to request rate. The directory has the same cost, and its documentation places rate limits in the proxy, but this registry's docs do not say so.",
+        "evidence": "async fn certify(State(s): State<Arc<Shared>>, body: Bytes) -> Response { let proof = match VerifiedRecord::verify(&body) { ... }; let st = s.state.lock()...; match st.certify(&proof) { Ok(cert) => ... MembershipCert::issue(...) } }. Only DefaultBodyLimit::max(MAX_RECORD_SIZE) bounds the input.",
+        "suggested_fix": "Check the cheap things first (network name, identity count, and whether each identity is registered, which needs no signature check, although the record must be verified before its identities can be trusted, so the ordering may need to stay). Add a concurrency or per-source rate limit on /v1/certify, or document that the proxy must provide one, and consider caching certificates for an unchanged (endpoint, identities, sequence) tuple.",
+        "validation_needed": "Hypothesis. Needs a load test to measure the CPU cost per request on the target hardware and to confirm no rate limit exists in the deployment proxy, which is outside the supplied source.",
+        "lens": "dos",
+        "module": "closed-network",
+        "id": "closed-network/dos#3"
+      },
+      {
+        "title": "Registry server sets no connection, header or body-read timeouts and no concurrency cap",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/registry.rs",
+        "line": 328,
+        "prerequisites": "A remote client that can open TCP connections to the registry listen address (or to the proxy that forwards to it) and then sends headers or bodies very slowly or not at all.",
+        "impact": "serve_with calls axum::serve with no read timeout, no concurrency limit and no connection cap. Slow or idle connections can hold file descriptors and tasks for an unbounded time. The body size is bounded by DefaultBodyLimit, but the time to send it is not.",
+        "evidence": "pub async fn serve_with(...) -> std::io::Result<()> { let app = router_with(path, options)...; axum::serve(listener, app).await } and the router only sets .layer(DefaultBodyLimit::max(MAX_RECORD_SIZE)).",
+        "suggested_fix": "Put a tower timeout layer (for example TimeoutLayer or ConcurrencyLimitLayer) on the router, or set hyper header and read timeouts through a custom accept loop, and document that the proxy must enforce them if the server does not.",
+        "validation_needed": "Hypothesis. Needs a slowloris-style test against the built server, and a check of which timeouts the axum and hyper versions in Cargo.lock already apply by default.",
+        "lens": "dos",
+        "module": "closed-network",
+        "id": "closed-network/dos#4"
+      }
+    ],
+    "limitations": [
+      "The record verification code in record.rs was not supplied; the stated bounds (4096 bytes, at most 16 identities, at most 17 signature checks) were taken as given and not checked.",
+      "The TLS-terminating proxy, rate limits and connection limits in front of the registry and the directory were not supplied, so their absence in the server code may be covered by the deployment.",
+      "The postcard and serde allocation behavior for the certificate wire format was assumed from the library defaults, not tested.",
+      "The store and directory modules, the signer and the telemetry code were not supplied.",
+      "Performance numbers were not measured; the cost findings are based on reading the code."
+    ],
+    "lens": "dos"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 31286,
+    "output_tokens": 5735,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.005996100000000001
+}

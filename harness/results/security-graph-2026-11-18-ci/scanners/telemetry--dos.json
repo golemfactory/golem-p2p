@@ -1,0 +1,91 @@
+{
+  "module": "telemetry",
+  "lens": "dos",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/telemetry.rs",
+      "sha256": "c4f78826a11a7d207d8f6e4f1e7cb5cedde7050863c8e8a1c839d2131cac6036",
+      "lines": 223
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/telemetry/mod.rs",
+      "sha256": "d44356d32854710c4105d83cd2df68e54ae44563f09a0ed1b20855cff7c9139e",
+      "lines": 812
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+      "sha256": "d8aba9e0904a7326c5a0066daf3f5b37d82bbadd84566c05c246fa58c061c8d4",
+      "lines": 1961
+    }
+  ],
+  "review": {
+    "summary": "Three lens-relevant issues in the collector stand out. The most concrete is that a member can grow retained link history without bound by reporting fresh peer IDs, because the collector stores every reported link in each history sample. The other two are a per-request cost issue (signature and certificate work runs under the global mutex before any rate limit) and a cost issue for long history queries, which also run under that mutex. The first is a demonstrated code defect in mechanism with an impact magnitude that needs a test; the other two are hypotheses that need load tests.",
+    "findings": [
+      {
+        "title": "A member can grow retained link history without bound by reporting fresh peer IDs",
+        "severity": "medium",
+        "confidence": "high",
+        "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+        "line": 699,
+        "prerequisites": "An attacker holds one valid membership certificate, so it is a member of the closed network. It can then report one signed report every 4 s (the default min_interval), each listing up to 256 connections with peer IDs it invents. Generating valid node IDs is cheap.",
+        "impact": "Each tick copies every link of every online or stale node into the 5 s sample and the 1-minute aggregate, and both are kept for the full retention (7 days by default). Peers that do not report are never checked, and distinct link keys are never capped. A single member that rotates peer IDs adds up to 256 new link keys per report, so the retained history and minutes-*.jsonl files grow linearly with time for the whole retention window. Memory and disk use are therefore bounded only by time, not by the number of members or by MAX_NODES. Only the rate limit (about 1 report per 4 s) and the 256-connection cap apply.",
+        "evidence": "tick(): `for l in &links { ... s.links.insert(format!(\"{},{}\", l.a, l.b), LinkSample { ... }) }` at lines 693-709. merged_links() adds every connection of every non-offline node: `for c in &n.report.connections { if c.peer == *id { continue; } ... views.entry(key).or_default().push(View { ... }) }` at lines 588-602. validate() only parses c.peer as NodeId (lines 352-363) and does not cap distinct peers. push_minute() keeps the aggregate for the full retention window (lines 737-744).",
+        "suggested_fix": "Store only links whose both ends are known nodes, or only links with at least one reporting end that is currently online. Cap the number of link keys per sample and per minute, and drop links that are not reported by a node that is itself a known member. Consider a global cap on links per sample, with an explicit overflow counter.",
+        "validation_needed": "Demonstrated by code reading, not by a run. A test should send reports with 256 fresh peer IDs per report for a few simulated minutes and measure the size of the minutes-*.jsonl files and the in-memory minutes deque. The impact magnitude is a hypothesis until measured.",
+        "lens": "dos",
+        "module": "telemetry",
+        "id": "telemetry/dos#1"
+      },
+      {
+        "title": "Signature and certificate work runs under the global mutex before any rate limit",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+        "line": 1396,
+        "prerequisites": "Anyone who can reach POST /v1/report, which is the one route meant to be public. Requests may carry arbitrary headers and bodies of up to 64 KiB. No authentication is needed to reach the verification step.",
+        "impact": "Every request reaches verify() before any rate limit. verify() hashes the body with SHA-256 and recovers the signer, then decodes and checks the certificate. All of this runs while holding the single std Mutex that also protects the dashboard, state, history, metrics and the sampler. The handler is async but locks a blocking std Mutex, so a burst of invalid requests can hold up tokio worker threads and delay every other request and the sampler. Axum sets no concurrency limit here, so the number of parallel requests is not capped by the code.",
+        "evidence": "async fn report: `let r = s.lock().expect(\"poisoned\").accept(&body, &headers, now_ms());` (lines 1395-1398). accept_inner runs `golem_p2p::telemetry::verify(...)` on the full body (lines 471-477) before the bucket check (lines 508-521). Only the body size check comes before it (lines 462-464).",
+        "suggested_fix": "Move the rate-limit check and cheap header and size checks before any signature work, keyed by the signature's claimed key bytes or by client address at the proxy. Do the crypto outside the lock, and lock only to read and write node state. Use tokio's async Mutex or a dedicated blocking task, and add a concurrency limit on the report route.",
+        "validation_needed": "Hypothesis. A test should send a flood of 64 KiB requests with invalid signatures and measure lock hold time and the latency of GET /metrics during the flood. The Prometheus and dashboard routes are not in the supplied files for their auth configuration.",
+        "lens": "dos",
+        "module": "telemetry",
+        "id": "telemetry/dos#2"
+      },
+      {
+        "title": "A long history query aggregates all retained minutes under the global mutex",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/telemetry/collector.rs",
+        "line": 1458,
+        "prerequisites": "Anyone who can reach GET /v1/history. The collector applies no authentication itself (the docs say to put it behind a proxy). The range parameter is clamped only to the retention, which defaults to 7 days.",
+        "impact": "A request with range=604800 (or any range up to retention) makes history() walk every retained minute sample, aggregate them in groups, and build a per-group BTreeMap of every link. The work is proportional to retained minutes times links per sample, and it runs while holding the global mutex that the report handler and the sampler also need. The answer is capped at 720 points, but the work is not. Repeated requests cost the server about this much each time, and nothing is cached.",
+        "evidence": "history handler: `let range = Duration::from_secs(range.clamp(60, max));` then `let v = c.history(now_ms(), range, node, link)` while holding `c` (lines 1449-1458). history(): `for s in self.minutes.iter().filter(|s| s.t >= since) { ... out.push(aggregate(&group, group_t.expect(\"set\"), step)); ... }` (lines 939-950). aggregate() builds a `BTreeMap<String, ...>` of all links for each group (lines 1234-1256).",
+        "suggested_fix": "Cache the aggregated series per range, or precompute coarser tiers at sample time. Do the aggregation without holding the mutex (copy the needed samples out first). Add a limit on concurrent history queries, and cap the number of links in aggregates (see the previous finding).",
+        "validation_needed": "Hypothesis. A benchmark with 7 days of synthetic minute samples and a realistic link count, measuring time per GET /v1/history?range=604800 and the lock hold time, would confirm or refute it.",
+        "lens": "dos",
+        "module": "telemetry",
+        "id": "telemetry/dos#3"
+      }
+    ],
+    "limitations": [
+      "record.rs and the membership module were not supplied; the bounds quoted from VerifiedRecord and the certificate checks are taken from the review brief and not verified here.",
+      "The reverse proxy (nginx on master, oauth2-proxy) and its limits, timeouts and rate limits are not in the supplied files, so anonymous reach of the read routes is an assumption.",
+      "axum::serve connection and header timeouts depend on the axum and hyper versions and their configuration, which were not supplied; no slow-client finding is reported for that reason.",
+      "Runtime behaviour was not tested. The memory and time figures above are estimates from the code, not measurements.",
+      "The golem-p2p telemetry module is covered only through its verify function; the registry and membership parsing it calls were not supplied.",
+      "The tests in the three files were read but not run."
+    ],
+    "lens": "dos"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 55062,
+    "output_tokens": 8952,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0099822
+}

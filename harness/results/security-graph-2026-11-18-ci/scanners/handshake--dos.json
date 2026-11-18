@@ -1,0 +1,105 @@
+{
+  "module": "handshake",
+  "lens": "dos",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/endpoint.rs",
+      "sha256": "920391c16aced7b2daac6951cb0af45b7a9557b04bb9cb75652961f320b1af63",
+      "lines": 2328
+    },
+    {
+      "file": "crates/golem-p2p/src/wire.rs",
+      "sha256": "68526624080bff28255ecd7ab05f7b587650516f9e36d437f44610a191faad94",
+      "lines": 187
+    },
+    {
+      "file": "crates/golem-p2p/src/error.rs",
+      "sha256": "dc5435fff4367a692429fe25d68391c2f1e9f2e4b831b8dae593285c439e00a9",
+      "lines": 81
+    }
+  ],
+  "review": {
+    "summary": "Reviewed endpoint.rs, wire.rs and error.rs through the input parsing, DoS and resource-bound lens. Frame parsing in wire.rs is bounded before allocation (read_frame checks len against max before vec allocation; header and control limits are 256 and 16 KiB). The findings below concern global bounds on attacker-triggerable work and occupancy, not parser allocation. All are hypotheses that need a load test against a real iroh/quinn stack; none was run.",
+    "findings": [
+      {
+        "title": "Connection table can be filled by cheap valid handshakes that then idle indefinitely",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p/src/endpoint.rs",
+        "line": 1100,
+        "prerequisites": "An anonymous peer that can generate valid records for its own endpoint key (records cost nothing, per the known limits). It opens QUIC connections, completes a Hello with a valid record, and then keeps each connection alive without sending application traffic (for example by QUIC keep-alives or an open idle control stream).",
+        "impact": "The only limit on established connections is the global max_connections check, which defaults to 1024. Once that many idle connections are registered, every honest inbound handshake is refused with incoming.refuse(). The control_reader read has no timeout, so nothing closes a connection that only stays silent. This is a denial of service against all inbound peers from one attacker process, with no per-source or per-identity bound.",
+        "evidence": "Check: 'if open >= self.config.max_connections { incoming.refuse(); return false; }' (line 1100). Registration: 'conns.insert(c.stable_id(), c.clone());' (register, ~line 1252). Read with no timeout: 'm = wire::read_frame::<Control>(&mut recv, MAX_CONTROL_FRAME) => m,' (control_reader, line 1658). The handshake timeout applies only before Welcome.",
+        "suggested_fix": "Add a per-source-address or per-identity cap on established connections, and reserve some capacity for dialers that are already known. Close connections that have sent no control or application traffic for a bounded time. Test: open max_connections valid handshakes from one process with keep-alives and check whether a new honest dial is refused.",
+        "validation_needed": "Hypothesis. Needs a test: fill the table from one process with valid Hellos and keep-alives, then confirm an honest peer is refused. Also check the iroh/quinn default idle timeout and keep-alive, which are not in the supplied source.",
+        "lens": "dos",
+        "module": "handshake",
+        "id": "handshake/dos#1"
+      },
+      {
+        "title": "Application stream header tasks are bounded only per connection, so the total is connections times 256",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p/src/endpoint.rs",
+        "line": 1724,
+        "prerequisites": "Up to 1024 established connections (see the previous finding), each opening the maximum of 256 concurrent bidirectional streams and sending no header bytes.",
+        "impact": "Every accepted stream spawns a task that waits up to handshake_timeout (10 s) for the KIND_APP byte and header, before any identity check. With 1024 connections, about 262,000 tasks and their QUIC stream state can be live at once. A reset frees a slot, so the attacker can keep reopening streams. Memory and scheduler load grow with the total, and nothing caps it globally.",
+        "evidence": "stream_acceptor: 'let Ok((send, recv)) = res else { break };' followed by 'tokio::spawn(handle_app_stream(inner.clone(), c.clone(), send, recv));' (line 1724). handle_app_stream waits on 'tokio::time::timeout(inner.config.handshake_timeout, async { if wire::read_kind(&mut recv).await? != KIND_APP ...' (lines 1734-1735). max_concurrent_bidi_streams is VarInt::from_u32(256) (line 491), which is per connection.",
+        "suggested_fix": "Put a global semaphore on pending header reads, with a short header deadline, and count pending headers per connection. Refuse or reset when the cap is reached, before spawning the task. Test: 1024 connections x 256 idle streams, then measure task count and memory.",
+        "validation_needed": "Hypothesis. Needs a load test that measures spawned tasks and RSS with many idle streams on many connections.",
+        "lens": "dos",
+        "module": "handshake",
+        "id": "handshake/dos#2"
+      },
+      {
+        "title": "Record updates from each connection cost full signature verification, paced per connection only",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p/src/endpoint.rs",
+        "line": 1675,
+        "prerequisites": "An established connection (obtainable cheaply, see the first finding). The peer sends well-formed Update frames, each a fresh record signed by its own keys with a higher seq than before, or stale ones, at the pacing rate.",
+        "impact": "Every Update is fully verified (up to 17 signatures for a record with 16 identities plus the endpoint key) before the seq check. Pacing is 100 ms per connection, so about 10 verifications per second per connection. The pacing does not limit the total across connections. With 1024 connections the aggregate is about 10,000 record verifications per second, roughly 170,000 signature checks per second, which is a CPU denial of service. The comment says QUIC flow control provides backpressure, but flow control does not limit verification cost per frame.",
+        "evidence": "'let new = match VerifiedRecord::verify(&record) {' (line 1675), after 'next_allowed = tokio::time::Instant::now() + UPDATE_INTERVAL;' (line 1660) and before 'if new.seq() <= current.seq() { continue; }' (line 1698). Constant: 'const UPDATE_INTERVAL: Duration = Duration::from_millis(100);' (line 631).",
+        "suggested_fix": "Check the cheap fields first (endpoint ID, instance ID, seq greater than current, expires_at) before verifying the signatures. Add a global verification budget across connections, or a per-connection budget that closes the connection after repeated stale or duplicate updates. Test: one connection that sends stale valid updates at the maximum rate, then multiply by the connection count.",
+        "validation_needed": "Hypothesis. Needs a benchmark of verify cost and a test that counts verifications per second with many connections. Whether checking seq before verifying is safe depends on record.rs, which is not supplied.",
+        "lens": "dos",
+        "module": "handshake",
+        "id": "handshake/dos#3"
+      },
+      {
+        "title": "Every incoming QUIC connection spawns a task before the handshake limit is checked",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/endpoint.rs",
+        "line": 1409,
+        "prerequisites": "A flood of incoming QUIC initial packets that iroh surfaces through accept(), while the 128 handshake permits are in use.",
+        "impact": "accept_loop spawns a task for each incoming connection without any bound. Only then does accept_incoming acquire a permit or refuse. Under a flood the task count grows with the arrival rate until tasks finish. The refuse path is cheap, so this is mainly a scheduling and memory cost, and its size depends on how iroh bounds its own accept queue, which is not in the supplied source.",
+        "evidence": "accept_loop: 'let Some(incoming) = incoming else { break };' then 'tokio::spawn(inner.clone().handle_incoming(incoming));' (lines 1408-1409). accept_incoming: 'let Ok(_permit) = self.handshakes.clone().try_acquire_owned() else { incoming.refuse(); return false; };' (lines 1096-1099).",
+        "suggested_fix": "Try to take the handshake permit in accept_loop before spawning, and refuse inline when none is free. Test: flood incoming connections while the 128 permits are held and watch the task count.",
+        "validation_needed": "Hypothesis. Needs a test that counts live tasks under an incoming flood, plus the iroh accept queue limit from its source.",
+        "lens": "dos",
+        "module": "handshake",
+        "id": "handshake/dos#4"
+      }
+    ],
+    "limitations": [
+      "record.rs, membership.rs, store.rs, discovery.rs, lookup.rs, signer.rs and addrs.rs are not supplied. The verify cost, the 4096-byte limit, the identity and address caps and the store's eviction behaviour are taken from the task description, not checked.",
+      "iroh and quinn defaults are not visible: idle timeout, keep-alive interval, accept queue depth and the exact stream and flow-control windows. Findings that depend on them are hypotheses.",
+      "The clippy panic-surface hits (expect on mutexes, arithmetic) were not counted as findings, because the supplied code shows no peer-controlled path that reaches them.",
+      "Per-IP or per-source rate limits may exist in the iroh layer or deployment, which is not in the supplied source.",
+      "Relay behaviour, the HTTP directory and the registry are out of scope for this module review."
+    ],
+    "lens": "dos"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 48239,
+    "output_tokens": 8113,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.008880400000000002
+}

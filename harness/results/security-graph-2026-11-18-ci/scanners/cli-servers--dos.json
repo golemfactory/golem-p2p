@@ -1,0 +1,101 @@
+{
+  "module": "cli-servers",
+  "lens": "dos",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p-cli/src/listen.rs",
+      "sha256": "32d0d84ba4b857409d4c731918a3a398671a62c51de095256b55bcf22236930e",
+      "lines": 468
+    },
+    {
+      "file": "crates/golem-p2p/src/addrs.rs",
+      "sha256": "7c600b9a5f70faca87026e802ff3f79dd8dcf1ec24b40c3791cf1c21e139b920",
+      "lines": 495
+    }
+  ],
+  "review": {
+    "summary": "Reviewed listen.rs and addrs.rs through the input parsing, DoS and resource-bounds lens. Request heads are fixed-size, echo reads are capped at MAX_REQUEST, upload and download bytes are capped per stream, and the publish list is capped at MAX_DIRECT_ADDRS. The main gap is that a download's transfer slot is released before the stream has drained, so lingering streams are not counted against max_transfers. The remaining findings are smaller timing and amplification issues. addrs.rs takes only local interface data and candidates already bounded by the record cap, so it yields no attacker-driven finding.",
+    "findings": [
+      {
+        "title": "Download slot released before the stream drains, so lingering downloads escape max_transfers",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/listen.rs",
+        "line": 393,
+        "prerequisites": "A remote peer that can open many QUIC streams on the connection cap and send download requests within max_transfer_size. The peer reads the response slowly or stops reading after write_source has buffered the data.",
+        "impact": "The permit is dropped at line 393, before send.stopped() is awaited for up to 10 s at line 399. Each stream that has finished writing still holds quinn send buffers, but no longer counts against max_transfers. Concurrent buffered download streams can therefore exceed the configured limit, bounded only by the connection and stream caps and flow-control windows. This is a demonstrated code ordering in the source; the size of the resulting memory impact needs a test.",
+        "evidence": "let permit = try_slot(slots); ... let write = write_source(&mut send, requested, &mut sent); let result = tokio::time::timeout(limits.max_transfer_time, write).await; drop(permit); ... Ok(Ok(())) => { let _ = tokio::time::timeout(Duration::from_secs(10), send.stopped()).await; }",
+        "suggested_fix": "Hold the permit until after the send.stopped() wait (or until the stream is finished or reset), and bound that wait by the transfer time, not a fixed 10 s, so the slot count covers every stream that still has buffered data.",
+        "validation_needed": "Write a test with max_transfers 1 and a client that requests a large download and never reads. Open a second download and check whether it is accepted while the first is still in its stopped() wait. Measure the buffered bytes per lingering stream.",
+        "lens": "dos",
+        "module": "cli-servers",
+        "id": "cli-servers/dos#1"
+      },
+      {
+        "title": "Download request phase uses a fresh REQUEST_TIME instead of the request deadline",
+        "severity": "low",
+        "confidence": "high",
+        "file": "crates/golem-p2p-cli/src/listen.rs",
+        "line": 145,
+        "prerequisites": "A peer sends a download magic and then trickles the byte count slowly, staying just inside the time limit for each read.",
+        "impact": "The head read is bounded by deadline (line 129), but the body read at line 145 restarts a new 10 s timer and ignores the deadline. A request can therefore hold a stream for about 20 s before refusal, and about 10 s more if the peer then stops reading at line 399. This doubles the per-stream hold time that REQUEST_TIME is meant to bound. The impact is modest because the stream count is still limited by the connection cap.",
+        "evidence": "match tokio::time::timeout(REQUEST_TIME, recv.read_to_end(max)).await { Ok(rest) => req.extend_from_slice(&rest?), Err(_) => req.clear(), }",
+        "suggested_fix": "Use tokio::time::timeout_at(deadline, ...) at line 145, as the echo path does at line 156, so the whole request phase shares one REQUEST_TIME budget.",
+        "validation_needed": "Test with a client that sends the source magic and then delays the count digits; measure the time until the server refuses or closes the stream.",
+        "lens": "dos",
+        "module": "cli-servers",
+        "id": "cli-servers/dos#2"
+      },
+      {
+        "title": "Echo reply can be about three times the request size through lossy UTF-8 conversion",
+        "severity": "low",
+        "confidence": "high",
+        "file": "crates/golem-p2p-cli/src/listen.rs",
+        "line": 180,
+        "prerequisites": "A remote peer sends an echo request of up to MAX_REQUEST bytes consisting of invalid UTF-8 bytes (for example lone 0x80 to 0xFF bytes).",
+        "impact": "String::from_utf8_lossy replaces each invalid byte with the three-byte U+FFFD sequence, so a 1 MiB request can produce a reply of about 3 MiB. This is an amplification of about 3x on the largest requests, and each reply is built as a separate formatted String. It is a small, bounded amplification, not an unbounded one.",
+        "evidence": "let reply = format!( \"{me} to={to} from={from} echo={}\", String::from_utf8_lossy(&req) ); inc.respond(reply.as_bytes()).await?;",
+        "suggested_fix": "Echo the request as raw bytes (or escape non-UTF-8 bytes to a fixed-size form), or reject non-UTF-8 echo requests, so the reply is never larger than the request plus the fixed header.",
+        "validation_needed": "Send a 1 MiB request of 0x80 bytes and measure the reply length to confirm the expansion factor.",
+        "lens": "dos",
+        "module": "cli-servers",
+        "id": "cli-servers/dos#3"
+      },
+      {
+        "title": "Oversized echo request returns an error without stopping the stream",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p-cli/src/listen.rs",
+        "line": 157,
+        "prerequisites": "A remote peer sends more than MAX_REQUEST - head bytes on an echo stream and then keeps the stream open without finishing it.",
+        "impact": "When read_to_end exceeds its limit, the error propagates through rest? at line 157, and the handler returns without calling recv.stop(REFUSED), unlike too_slow. The peer's stream is left open until flow control or connection teardown, with no explicit reset. Memory per stream stays bounded by flow control, so the impact is hypothetical and would need a test to confirm the behaviour of the dropped RecvStream.",
+        "evidence": "match tokio::time::timeout_at(deadline, read).await { Ok(rest) => head.extend_from_slice(&rest?), Err(_) => return Err(too_slow(&mut inc)), }",
+        "suggested_fix": "On a read_to_end error, call recv.stop(REFUSED) and send.reset(REFUSED) before returning, as too_slow does, so the stream is closed explicitly.",
+        "validation_needed": "Open an echo stream with MAX_REQUEST + 1 bytes and keep it open without finishing. Check whether the server holds the stream, and whether the peer's send side stays blocked, after the handler returns.",
+        "lens": "dos",
+        "module": "cli-servers",
+        "id": "cli-servers/dos#4"
+      }
+    ],
+    "limitations": [
+      "Context not supplied: record.rs (VerifiedRecord bounds were taken from the brief), the iroh and quinn versions and their default flow-control windows, and SelectedPath and path_name in observe.rs and out.rs.",
+      "Whether read_chunk(usize::MAX) allocates per chunk and how iroh's read_to_end reports TooLong were not checked against the dependency source.",
+      "The call sites of serve(), Limits and the CLI flags that set max_transfers and max_transfer_size are not in the supplied files, so the effective limits are unknown.",
+      "Concurrent echo requests of up to 1 MiB each are excluded by the known-limits list and were not reported.",
+      "addrs.rs was reviewed; its inputs are local interface enumeration and QAD-observed candidates, bounded by BTreeSet deduplication and the MAX_DIRECT_ADDRS cap, so no finding is reported there.",
+      "Test code in both files was read but not run; no dynamic testing was performed, so all findings are static."
+    ],
+    "lens": "dos"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 19316,
+    "output_tokens": 6594,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.005228600000000001
+}

@@ -1,0 +1,59 @@
+{
+  "module": "handshake",
+  "lens": "auth",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/endpoint.rs",
+      "sha256": "920391c16aced7b2daac6951cb0af45b7a9557b04bb9cb75652961f320b1af63",
+      "lines": 2328
+    },
+    {
+      "file": "crates/golem-p2p/src/wire.rs",
+      "sha256": "68526624080bff28255ecd7ab05f7b587650516f9e36d437f44610a191faad94",
+      "lines": 187
+    },
+    {
+      "file": "crates/golem-p2p/src/error.rs",
+      "sha256": "dc5435fff4367a692429fe25d68391c2f1e9f2e4b831b8dae593285c439e00a9",
+      "lines": 81
+    }
+  ],
+  "review": {
+    "summary": "Reviewed the handshake, record-update and application-stream authorization paths in endpoint.rs, plus the wire and error definitions. Handshake and update membership checks are present on the inserts I traced. One membership gap remains: expiry of a peer's certificate is enforced only by a sweep that shares a select loop with an unbounded registry call, and stream and connection reuse paths never re-check membership. This is a hypothesis that needs a test, not a demonstrated exploit.",
+    "findings": [
+      {
+        "title": "Expired peer certificates stay usable while the membership sweep is stalled, and stream/connection reuse never re-checks membership",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p/src/endpoint.rs",
+        "line": 1525,
+        "prerequisites": "Closed network with a membership policy. A member peer's certificate reaches expiry while our node still holds an open connection to it. The registry call in the renewal branch of membership_loop stalls (the issuer call has no timeout in this file), so the loop never reaches its 5 s sweep tick. Alternatively, the attacker is a member whose certificate expired and who keeps the connection open after the sweep has been starved.",
+        "impact": "Expiry of a peer's membership is enforced only by the sweep in membership_loop (lines 1517-1530). While that loop is blocked in the renewal branch, which awaits the registry at line 1536 with no timeout in this file, expired peers stay in the connection table. Connection::open_bi (line 2191), find_connection (lines 912-935) and handle_app_stream (lines 1751-1765) check only the record's identities, never check_member, so an expired or revoked member can keep opening and receiving application streams until the sweep runs. The lookup in find_connection also returns such connections to callers of connect and request.",
+        "evidence": "membership_loop: \"_ = sweep.tick() => { ... if let Err(e) = inner.check_member(&peer) { ... c.inner.conn.close(codes::NOT_MEMBER, b\"membership expired\"); } }\" and in the same select: \"_ = tokio::time::sleep_until(due) => { ... let res = certify(&m, ...).await; ...\". handle_app_stream: \"let peer = c.peer(); let code = if !inner.local_record().contains(&header.to) {...} else if !peer.contains(&header.from) { Some(codes::SENDER_NOT_BOUND) }\" with no membership check.",
+        "suggested_fix": "Run the expiry sweep in its own task, or give the renewal future a timeout and run it outside the sweep's select. Also add a cheap check in handle_app_stream and in find_connection/Connection::open_bi that the peer's certificate is still valid at the moment of use (check_member on c.peer()), and close the connection on failure.",
+        "validation_needed": "Hypothesis, not a demonstrated defect. Write a test with a mock issuer that blocks certify and a short-lived peer certificate: after the peer's certificate expires and the issuer call hangs, check whether an application stream from that peer is still accepted and whether connect() still returns the old connection. The issuer implementation is not in the supplied files, so whether it has its own timeout is unknown.",
+        "lens": "auth",
+        "module": "handshake",
+        "id": "handshake/auth#1"
+      }
+    ],
+    "limitations": [
+      "membership.rs (MembershipPolicy::check_record, check_cert, MembershipCert::covers and the issuer's certify timeout) and record.rs were not supplied; I did not verify whether check_record binds the certificate to the record's endpoint ID or whether the issuer call has a timeout.",
+      "The lookup and store modules (RecordStore::insert/resolve, RecordLookup) were not supplied, so I could not confirm that all records entering the store pass check_member.",
+      "The signer and discovery implementations were not supplied; I did not assess who may call the public Endpoint::record_store() insert path, if it exists.",
+      "Known limits (open registration, handshake slot holding, replay after eviction, uncovered membership certificate, unbounded listen echo) were excluded as instructed."
+    ],
+    "lens": "auth"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 46555,
+    "output_tokens": 9871,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.009591
+}

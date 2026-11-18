@@ -1,0 +1,130 @@
+{
+  "module": "closed-network",
+  "lens": "leaks",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/membership.rs",
+      "sha256": "f08e6f76729fc89bbd8b1b946c12cd6772e309000d9cce96ca61255852d8f577",
+      "lines": 524
+    },
+    {
+      "file": "crates/golem-p2p/src/registry.rs",
+      "sha256": "1d59d61ebfd29293efe8e04b8717d755255946a6d4cff6ee4f4993dc92c4e621",
+      "lines": 562
+    },
+    {
+      "file": "crates/golem-p2p/src/discovery.rs",
+      "sha256": "acf74f06bebf66a23628bdeec86d3292409c7461eae6738d12c3962a67c4a135",
+      "lines": 329
+    },
+    {
+      "file": "crates/golem-p2p/src/lookup.rs",
+      "sha256": "d95a3dca506321926ea4d699dd346b16ccbddd6613e9fe065b507d1ed4b5a07e",
+      "lines": 43
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/registry.rs",
+      "sha256": "077bd7dbdf4e590634ff3f37a20ce5bce654b3aaf6b71681a72d0ca6f5aa7930",
+      "lines": 254
+    }
+  ],
+  "review": {
+    "summary": "Reviewed the closed-network membership, registry server, directory and registry client code for secret and information leaks. Most secret handling is sound: the signing key is hidden in Debug, tokens are stored as hashes, and the state file is written with mode 0600 on Unix. The findings below are the few real issues I could trace. Two are demonstrated code defects, and three are hypotheses that need a test.",
+    "findings": [
+      {
+        "title": "Unescaped text from a registry or proxy answer is printed to the operator's terminal",
+        "severity": "medium",
+        "confidence": "high",
+        "file": "crates/golem-p2p/src/membership.rs",
+        "line": 478,
+        "prerequisites": "The operator uses the CLI against a registry URL that returns attacker-chosen text. This happens if the registry or a proxy in front of it is compromised, or if the URL is plain http and an on-path attacker can rewrite the answer (see the cleartext finding).",
+        "impact": "error_text keeps the first line of the body (up to 200 chars, any control characters included) and returns it as the error message. The CLI prints it through bail!, and list commands print the raw body with print!. A remote party can therefore put ANSI escape sequences or forged text into the admin's terminal.",
+        "evidence": "let line: String = body.lines().next().unwrap_or(\"\").chars().take(200).collect(); ... format!(\"HTTP {status}: {line}\") ; CLI: print!(\"{}\", call(&c, \"GET\", \"v1/accounts\", Some(&admin)).await?)",
+        "suggested_fix": "Replace control characters (including ESC and other C0/C1 controls) with escapes or spaces before building the message, and sanitize the raw body in the CLI list commands as well. Add a test that a body containing \\x1b[ is rendered without the control byte.",
+        "validation_needed": "Demonstrated code defect by reading. A unit test with a body containing an ANSI escape would confirm that the control byte reaches the error string unchanged.",
+        "lens": "leaks",
+        "module": "closed-network",
+        "id": "closed-network/leaks#1"
+      },
+      {
+        "title": "Account and admin bearer tokens are sent to any URL scheme, including plain http, with the default redirect policy",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p/src/membership.rs",
+        "line": 455,
+        "prerequisites": "An operator sets the registry URL to an http:// address (the registry itself serves plain HTTP by design), or the registry answers with a redirect. An on-path attacker can then read the token or send the client elsewhere.",
+        "impact": "RegistryClient::call attaches the bearer token with no check that the scheme is https. The client is built with reqwest defaults, which follow redirects, so the token may be carried to other hosts depending on the reqwest version. A leaked admin token gives control of all accounts; a leaked account token allows registering or removing nodes.",
+        "evidence": "if let Some(t) = token { req = req.bearer_auth(t); } ... let mut req = self.client.request(method, url);  (client built with .timeout and .connect_timeout only; no redirect policy set)",
+        "suggested_fix": "Reject non-https registry URLs for token-bearing calls unless an explicit insecure flag is given. Set redirect(reqwest::redirect::Policy::none()) for the management client, so tokens are never forwarded.",
+        "validation_needed": "Hypothesis. A test against a local http server that checks whether the bearer header is sent, and a redirect test to a second host, would confirm the behaviour of the reqwest version in use.",
+        "lens": "leaks",
+        "module": "closed-network",
+        "id": "closed-network/leaks#2"
+      },
+      {
+        "title": "Directory URL with credentials can end up in error messages and warning logs",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p/src/discovery.rs",
+        "line": 264,
+        "prerequisites": "The directory base URL contains userinfo (https://user:password@host/), which an operator might configure. A publish failure then logs the error through the warn! in MultiDiscovery::publish.",
+        "impact": "self.error includes the full base URL, so any password in it is written to error values and logs. reqwest error text may include the URL too.",
+        "evidence": "fn error(&self, e: impl fmt::Display) -> DiscoveryError { DiscoveryError::Service(format!(\"directory {}: {e}\", self.base)) }",
+        "suggested_fix": "Reject base URLs with a username or password in HttpDirectory::with_tls, or print only the scheme, host and port in error messages.",
+        "validation_needed": "Hypothesis. Depends on whether reqwest errors include userinfo for the configured base URL. A test that formats the error for a base URL with credentials would confirm it.",
+        "lens": "leaks",
+        "module": "closed-network",
+        "id": "closed-network/leaks#3"
+      },
+      {
+        "title": "Pre-existing temporary state file keeps loose permissions before it is renamed over the state file",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/registry.rs",
+        "line": 177,
+        "prerequisites": "A file with the name of the temporary path (state path with extension tmp) already exists with looser permissions, for example from an earlier run, a copy, or another user who can write to the directory.",
+        "impact": "OpenOptions::mode(0o600) applies only when the file is created. write_private truncates an existing file and keeps its permissions. The rename then installs that file as the state file, which holds the registry signing key and admin token hash.",
+        "evidence": "let tmp = path.with_extension(\"tmp\"); ... write_private(&tmp, text.as_bytes()) ... std::fs::rename(&tmp, path)  with write_private using .mode(0o600) on open",
+        "suggested_fix": "Remove the temporary file before creating it, or create it with create_new(true) so that an existing file is an error. Optionally call set_permissions(0o600) on the file before the rename.",
+        "validation_needed": "Hypothesis. Requires a directory where an attacker or an earlier process left a loose-permission tmp file. A test that pre-creates the tmp file with mode 0644 and checks the state file mode after save would confirm it.",
+        "lens": "leaks",
+        "module": "closed-network",
+        "id": "closed-network/leaks#4"
+      },
+      {
+        "title": "Non-Unix state and token files are written with default permissions",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/registry.rs",
+        "line": 252,
+        "prerequisites": "The registry runs on a non-Unix platform, where the state file contains the signing key and the admin token is written with write_secret.",
+        "impact": "The documented mode 0600 is not applied, so the signing key and admin token are written with the default ACL of the directory, which may be readable by other local users.",
+        "evidence": "#[cfg(not(unix))] fn write_private(path: &FsPath, data: &[u8]) -> std::io::Result<()> { std::fs::write(path, data) }",
+        "suggested_fix": "On Windows, set a restrictive ACL on the file, or refuse to save secrets and document that the state file must be placed in a private directory.",
+        "validation_needed": "Hypothesis, only relevant if non-Unix deployment is supported. Checking the file ACL after save on Windows would confirm the default permissions.",
+        "lens": "leaks",
+        "module": "closed-network",
+        "id": "closed-network/leaks#5"
+      }
+    ],
+    "limitations": [
+      "Not in the supplied files: record.rs (VerifiedRecord::verify, RecordError Display text), directory.rs (the server-side handlers and what they log), the node's handshake and telemetry code, and the write_secret helper in the CLI main.rs, which determines how token files are written.",
+      "Whether reqwest strips the Authorization header on redirects depends on the reqwest version in Cargo.lock, which was not reviewed in detail.",
+      "The CLI parse module and the telemetry collector, which may log or forward registry URLs and node data, are not in the supplied files.",
+      "Deployment details (TLS proxy in front of the registry, file system permissions of the state directory, whether operators use http URLs) are not in the source and were not assumed beyond what the code shows.",
+      "Already-decided limits (registration without proof of possession, plain-HTTP directory, unbounded signature cost) were not re-reported."
+    ],
+    "lens": "leaks"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 30522,
+    "output_tokens": 6441,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.006272700000000001
+}

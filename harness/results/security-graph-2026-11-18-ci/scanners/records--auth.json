@@ -1,0 +1,84 @@
+{
+  "module": "records",
+  "lens": "auth",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/record.rs",
+      "sha256": "840e094e6272521849a45d3138bcf9f3597cb55be069cc2e42d0806eb271f0eb",
+      "lines": 721
+    },
+    {
+      "file": "crates/golem-p2p/src/identity.rs",
+      "sha256": "3b1f8daa7a207afbc75e06b2fe9bf0f994e59f2de58c9e275924dfd75d92032e",
+      "lines": 230
+    },
+    {
+      "file": "crates/golem-p2p/src/signer.rs",
+      "sha256": "f0886277410202573aef33f6932c9ead958dea9a9af1f202dfb80953fb66df7e",
+      "lines": 199
+    },
+    {
+      "file": "crates/golem-p2p/src/store.rs",
+      "sha256": "c60552af3563f261d1b40c94c3a1a821e1b87ffefc5a6d7189b57dd84d5a9079",
+      "lines": 529
+    },
+    {
+      "file": "crates/golem-p2p/src/directory.rs",
+      "sha256": "745d576c86e8af0cd08a15a96589f13b2b7b99f62c55cdbcfdae6e04eae2b1e1",
+      "lines": 117
+    }
+  ],
+  "review": {
+    "summary": "Limited to authentication, authorization, membership and certificates in records, store and directory. Signature, identity and endpoint checks in record.rs and the withdrawal logic in store.rs look sound for the stated threat model. The policy gate in directory.rs covers only PUT, and membership is not re-checked on read or on revocation. Both findings below are about directory behaviour in closed networks and depend on membership.rs, which was not supplied, so they are hypotheses or deployment-dependent rather than proven defects.",
+    "findings": [
+      {
+        "title": "Closed-network directory serves member records to anonymous readers",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p/src/directory.rs",
+        "line": 105,
+        "prerequisites": "A directory started with router_with_policy or serve_with_policy for a closed network. Any unauthenticated client that knows or guesses a member node ID.",
+        "impact": "The membership gate only guards writes. Anyone can fetch a member's signed record, which reveals the endpoint ID, direct IP addresses, relay URLs and all identities. Non-members can use this to learn the member roster and reach member endpoints, which a closed network is meant to prevent. Whether this is a real exposure depends on deployment and on whether the network treats its records as confidential.",
+        "evidence": "router_with_policy: .route(\"/v1/records\", put(put_record)).route(\"/v1/records/{node_id}\", get(get_record)) with the policy only in put_record: if let Some(p) = &dir.policy && let Err(e) = p.check_record(&rec, ...) => FORBIDDEN. get_record: match dir.store.resolve(&id) { Some(rec) => rec.to_bytes() ... }, with no policy or caller check.",
+        "suggested_fix": "If records of a closed network are confidential, require a membership proof on GET (for example a signed challenge from a member identity) or serve GET only on an internal listener. If public reads are intended, document that the roster is public and state it in the policy docs.",
+        "validation_needed": "Demonstrated code behaviour: a GET with no credentials returns the stored record for a node ID under a policy router. Whether that is a defect depends on the intended confidentiality of closed-network records, which needs confirmation from the design docs and membership.rs.",
+        "lens": "auth",
+        "module": "records",
+        "id": "records/auth#1"
+      },
+      {
+        "title": "Membership is checked only on PUT, so revoked or expired certificates keep resolving until the record expires",
+        "severity": "medium",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/directory.rs",
+        "line": 93,
+        "prerequisites": "A directory with a membership policy. A member's record with a valid certificate is accepted, then the member is removed from the network or its certificate expires. Records last up to MAX_TTL (24 h) plus MAX_CLOCK_SKEW, and the store does not re-check membership.",
+        "impact": "After removal, the removed member's record can still be resolved through GET, and it stays there until the record expires. Removal is therefore delayed by up to about 24 hours, and a removed member can still be dialled through the directory during that window. The directory also keeps the record after its certificate has expired.",
+        "evidence": "put_record: if let Some(p) = &dir.policy && let Err(e) = p.check_record(&rec, std::time::SystemTime::now()) => FORBIDDEN; then dir.store.insert(&rec). store.rs resolve_at returns Some(rec.clone()) or Some(latest.clone()) after checking only expires_at and withdrawal, never the membership certificate. record.rs MAX_TTL = 24 h.",
+        "suggested_fix": "Make resolve or GET re-run the membership check at read time, or have the directory prune records whose certificates are revoked or expired. Alternatively, bound the record expiry by the certificate's expiry when the record is stored.",
+        "validation_needed": "Needs a test: create a valid member record under a policy, revoke or let the certificate expire, then GET it after the record's own expiry would be unreached. The result depends on what check_record and the certificate format enforce in membership.rs, which was not supplied, so the behaviour cannot be confirmed from these files alone.",
+        "lens": "auth",
+        "module": "records",
+        "id": "records/auth#2"
+      }
+    ],
+    "limitations": [
+      "membership.rs (MembershipPolicy, check_record, certificate format and expiry, revocation lists) was not supplied, so the certificate and revocation findings rely on assumptions about it.",
+      "Callers of RecordStore::insert outside directory.rs (the endpoint peer cache, discovery, the CLI) were not supplied, so it is unknown whether they apply membership checks before insertion.",
+      "The intended confidentiality of closed-network records and whether directory reads are meant to be public were not stated in the supplied files.",
+      "Known limits from the brief (registry first-come claims, membership certificate stripping, eviction replay, unbounded echo requests, plain HTTP) were not re-reported."
+    ],
+    "lens": "auth"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 33441,
+    "output_tokens": 6620,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0066541000000000005
+}

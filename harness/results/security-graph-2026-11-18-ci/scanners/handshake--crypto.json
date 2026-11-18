@@ -1,0 +1,60 @@
+{
+  "module": "handshake",
+  "lens": "crypto",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/endpoint.rs",
+      "sha256": "920391c16aced7b2daac6951cb0af45b7a9557b04bb9cb75652961f320b1af63",
+      "lines": 2328
+    },
+    {
+      "file": "crates/golem-p2p/src/wire.rs",
+      "sha256": "68526624080bff28255ecd7ab05f7b587650516f9e36d437f44610a191faad94",
+      "lines": 187
+    },
+    {
+      "file": "crates/golem-p2p/src/error.rs",
+      "sha256": "dc5435fff4367a692429fe25d68391c2f1e9f2e4b831b8dae593285c439e00a9",
+      "lines": 81
+    }
+  ],
+  "review": {
+    "summary": "Reviewed the handshake, record update and application stream paths for signature and crypto issues. The TLS-to-record binding is checked on both dial and accept, and record updates are verified and bound to the same endpoint and instance. One hypothesis remains: a record's own expiry is not re-checked on an open connection, so identity claims can outlive the signature that granted them.",
+    "findings": [
+      {
+        "title": "Identity claims on an open connection are not re-checked against record expiry",
+        "severity": "medium",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/endpoint.rs",
+        "line": 1754,
+        "prerequisites": "A peer endpoint E holds a valid record R that lists identity X and expires at time T. E keeps its QUIC connection open past T and sends no newer record. The record's identity owner stops re-signing for E, so R is never renewed. This is a hypothesis: whether the expiry bound is meant to revoke authority on live connections is not documented in the supplied files.",
+        "impact": "After R expires, handle_app_stream still accepts streams whose from is X on that connection, and find_connection still routes requests for X to it. The signature that authorised X on E is no longer valid under the record's own expiry rule, but nothing re-checks it on the live connection. Only membership expiry is swept (membership_loop), not record expiry.",
+        "evidence": "handle_app_stream: \"} else if !peer.contains(&header.from) {\" where peer = c.peer(). register stores the verified record and never reads expires_at: \"let (peer_tx, peer_rx) = watch::channel(peer.clone());\". membership_loop sweeps only check_member(&peer), and find_connection filters only on is_closed, contains, seq and is_superseded. control_reader accepts an update only when VerifiedRecord::verify succeeds and new.seq() > current.seq().",
+        "suggested_fix": "Keep the record's expires_at with the connection (for example in ConnInner, or read it from peer.expires_at()). Check it in find_connection and in handle_app_stream, and have membership_loop, or a similar sweep, close connections whose peer record has expired, with a dedicated close code. Add a test that a connection whose peer record has expired stops accepting streams claiming that peer's identities.",
+        "validation_needed": "Confirm in record.rs that expires_at is exposed and that VerifiedRecord::verify does not re-check expiry at use time. Then write a test: establish a connection with a short-lived record, advance time past expiry without a new update, and check that open_bi and handle_app_stream still accept identity X.",
+        "lens": "crypto",
+        "module": "handshake",
+        "id": "handshake/crypto#1"
+      }
+    ],
+    "limitations": [
+      "record.rs, membership.rs and the signer are not supplied, so the checks VerifiedRecord::verify performs (expiry, signature coverage, trailing bytes, the sequence number rule) are taken from the review brief rather than read from source.",
+      "Whether records are meant to bind identities only until expiry on live connections is not stated in the supplied docs; the finding depends on that.",
+      "No test files were included in the three supplied files, so existing test coverage of these paths is unknown.",
+      "Key generation, storage and file permissions for a fixed iroh secret key are not visible in these files (Builder::secret_key takes an in-memory key only).",
+      "The membership certificate is not covered by the record signature (a known limit) and was not re-examined."
+    ],
+    "lens": "crypto"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 46540,
+    "output_tokens": 5142,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.007225
+}

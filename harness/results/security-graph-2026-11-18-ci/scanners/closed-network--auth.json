@@ -1,0 +1,101 @@
+{
+  "module": "closed-network",
+  "lens": "auth",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/membership.rs",
+      "sha256": "f08e6f76729fc89bbd8b1b946c12cd6772e309000d9cce96ca61255852d8f577",
+      "lines": 524
+    },
+    {
+      "file": "crates/golem-p2p/src/registry.rs",
+      "sha256": "1d59d61ebfd29293efe8e04b8717d755255946a6d4cff6ee4f4993dc92c4e621",
+      "lines": 562
+    },
+    {
+      "file": "crates/golem-p2p/src/discovery.rs",
+      "sha256": "acf74f06bebf66a23628bdeec86d3292409c7461eae6738d12c3962a67c4a135",
+      "lines": 329
+    },
+    {
+      "file": "crates/golem-p2p/src/lookup.rs",
+      "sha256": "d95a3dca506321926ea4d699dd346b16ccbddd6613e9fe065b507d1ed4b5a07e",
+      "lines": 43
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/registry.rs",
+      "sha256": "077bd7dbdf4e590634ff3f37a20ce5bce654b3aaf6b71681a72d0ca6f5aa7930",
+      "lines": 254
+    }
+  ],
+  "review": {
+    "summary": "Reviewed membership certificates, registry HTTP authorization and persistence, and the directory and registry HTTP clients through the authentication, authorization and certificate lens. The core checks hold: certify requires every listed identity to be registered, admin and account routes check tokens before mutating, node removal is limited to the owning account, and failed saves roll back. The findings below are low-to-medium hypotheses that need tests, not demonstrated exploits.",
+    "findings": [
+      {
+        "title": "Registry client sends bearer tokens over plain HTTP without a scheme check",
+        "severity": "medium",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/membership.rs",
+        "line": 455,
+        "prerequisites": "An operator or script points the CLI or RegistryClient at an http:// registry URL (the registry serves plain HTTP by design), and an on-path observer can read the traffic between the client and the registry.",
+        "impact": "The admin token or an account token is sent in cleartext in the Authorization header. An observer can then create accounts, register or remove nodes, or list all nodes. Nothing in the client rejects http:// bases, and with_tls accepts any URL.",
+        "evidence": "RegistryClient::with_tls(base, tls) builds the client without checking base.scheme(); call() does: if let Some(t) = token { req = req.bearer_auth(t); }",
+        "suggested_fix": "Reject non-https base URLs in RegistryClient::with_tls and new unless an explicit insecure opt-in is set, or at least warn when a token is sent to an http URL.",
+        "validation_needed": "Test that RegistryClient::new(http://...) followed by call(GET, v1/nodes, Some(token)) sends the token in cleartext. Confirm whether the CLI documents https as required.",
+        "lens": "auth",
+        "module": "closed-network",
+        "id": "closed-network/auth#1"
+      },
+      {
+        "title": "Existing temporary state file keeps its old permissions, so the signing key can be written to a more readable file",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/registry.rs",
+        "line": 244,
+        "prerequisites": "A local user can create or leave behind the fixed name state.tmp (path with_extension tmp) before the registry saves, with permissions wider than 0600 (for example a leftover file from an earlier crash or a file created under a permissive umask).",
+        "impact": "OpenOptions::mode(0o600) applies only when the file is created. On an existing file, truncate keeps its mode, so the state file, which holds the registry signing key and the admin hash, is written into a file that other local users may read. The rename then moves that file into place as the state file.",
+        "evidence": "let tmp = path.with_extension(\"tmp\"); ... write_private(&tmp, text.as_bytes()) ... fn write_private: .truncate(true).mode(0o600).open(path)?; with no fchmod or check of an existing file's mode.",
+        "suggested_fix": "Write to a unique temporary name created with create_new(true), or call set_permissions(0o600) on the opened file before writing, and fsync the parent directory after the rename.",
+        "validation_needed": "Test: pre-create state.tmp with mode 0644, run a save, and check the resulting state file mode. Depends on whether the state directory is shared with untrusted local users.",
+        "lens": "auth",
+        "module": "closed-network",
+        "id": "closed-network/auth#2"
+      },
+      {
+        "title": "Certificate signature check accepts malleable ed25519 signatures, so one certificate has many encodings",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/membership.rs",
+        "line": 198,
+        "prerequisites": "An attacker holds any valid certificate issued by the registry, which a node can obtain legitimately for itself, and can re-encode the signature bytes.",
+        "impact": "PublicKey::verify does not enforce a canonical signature encoding, so a different byte string for the same certificate also verifies. The comment says one certificate has one encoding, and that property is false. Anything that deduplicates or keys by certificate bytes, such as a revocation list or a cache of seen certificates, could be bypassed. No authorization decision here changes, since the payload is still signed by the trusted key.",
+        "evidence": "issuer.verify(&digest(&wire.payload), &iroh::Signature::from_bytes(&sig)).map_err(|_| MembershipError::Signature)?; and the comment 'one certificate, one encoding' at decode.",
+        "suggested_fix": "Reject signatures with a non-canonical S value (s must be below the group order) or use verify_strict if available, and keep the one-encoding claim only if that is enforced. Check whether any caller keys on certificate bytes.",
+        "validation_needed": "Test that a signature with S replaced by S + L verifies. Check the callers outside the supplied files before rating it higher.",
+        "lens": "auth",
+        "module": "closed-network",
+        "id": "closed-network/auth#3"
+      }
+    ],
+    "limitations": [
+      "record.rs is not supplied; the verification rules that VerifiedRecord::verify enforces were taken from the task statement, not from the code.",
+      "The caller of CertIssuer::certify (the handshake, record updates and the directory) is not supplied, so it is unknown whether the returned certificate bytes are always run through MembershipPolicy::check_record before use, and whether the IssueError::Mismatch path is enforced.",
+      "The peer-side enforcement that closes connections when a certificate expires, and the handshake code, are not supplied.",
+      "The directory server (crate::directory) is not supplied, so its authorization of PUT and its record handling are not reviewed.",
+      "The registry's telemetry and CLI shutdown paths were only glanced at and are outside this lens.",
+      "The constant-time behaviour of token hash comparisons was not assessed further; a timing channel on SHA-256 digests is judged not practically exploitable and not reported."
+    ],
+    "lens": "auth"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 30523,
+    "output_tokens": 5902,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0060033000000000005
+}

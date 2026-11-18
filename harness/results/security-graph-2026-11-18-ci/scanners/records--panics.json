@@ -1,0 +1,85 @@
+{
+  "module": "records",
+  "lens": "panics",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/record.rs",
+      "sha256": "840e094e6272521849a45d3138bcf9f3597cb55be069cc2e42d0806eb271f0eb",
+      "lines": 721
+    },
+    {
+      "file": "crates/golem-p2p/src/identity.rs",
+      "sha256": "3b1f8daa7a207afbc75e06b2fe9bf0f994e59f2de58c9e275924dfd75d92032e",
+      "lines": 230
+    },
+    {
+      "file": "crates/golem-p2p/src/signer.rs",
+      "sha256": "f0886277410202573aef33f6932c9ead958dea9a9af1f202dfb80953fb66df7e",
+      "lines": 199
+    },
+    {
+      "file": "crates/golem-p2p/src/store.rs",
+      "sha256": "c60552af3563f261d1b40c94c3a1a821e1b87ffefc5a6d7189b57dd84d5a9079",
+      "lines": 529
+    },
+    {
+      "file": "crates/golem-p2p/src/directory.rs",
+      "sha256": "745d576c86e8af0cd08a15a96589f13b2b7b99f62c55cdbcfdae6e04eae2b1e1",
+      "lines": 117
+    }
+  ],
+  "review": {
+    "summary": "Reviewed record.rs, identity.rs, signer.rs, store.rs and directory.rs through the concurrency, panics and unwraps lens. Remote-input paths into record verification are guarded: the length and identity-count checks run before indexing at record.rs:177, the expiry arithmetic saturates, and the size cap runs before decoding. The store's lock is never held across an await and make_room cannot panic. One concrete defect is a detached pruner task that is not cancelled when the serve future is dropped. One low-confidence hypothesis concerns CPU-bound verification on the async runtime.",
+    "findings": [
+      {
+        "title": "Pruner task leaks when serve_with_policy future is dropped",
+        "severity": "low",
+        "confidence": "high",
+        "file": "crates/golem-p2p/src/directory.rs",
+        "line": 75,
+        "prerequisites": "The caller drops the future returned by serve or serve_with_policy, which the doc comment at line 56 says is how the server is stopped. This is an ordinary runtime condition, not remote input.",
+        "impact": "The abort at line 84 runs only after axum::serve returns normally. If the future is dropped mid-serve, the spawned pruner keeps running forever, holding an Arc to the store and calling prune every minute. A process that starts and stops the directory repeatedly accumulates such tasks.",
+        "evidence": "let pruner = { let store = store.clone(); tokio::spawn(async move { let mut tick = tokio::time::interval(Duration::from_secs(60)); loop { tick.tick().await; store.prune(); } }) }; let res = axum::serve(listener, router_with_policy(store, policy)).await; pruner.abort(); res",
+        "suggested_fix": "Wrap the JoinHandle in a guard struct whose Drop impl calls abort, or run the pruner inside the same future with tokio::select! so it is cancelled with the server.",
+        "validation_needed": "Demonstrated code defect by reading. Confirm with a test that drops the serve future and checks that the pruner task is finished or that the store's Arc strong count returns to 1.",
+        "lens": "panics",
+        "module": "records",
+        "id": "records/panics#1"
+      },
+      {
+        "title": "Record verification runs CPU-bound signature recovery on the async runtime",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/directory.rs",
+        "line": 89,
+        "prerequisites": "An anonymous client sends many PUT requests, each a maximum-size record with up to 16 identities and one endpoint signature, which is about 17 signature checks per request (see the known limit on signature cost).",
+        "impact": "VerifiedRecord::verify is synchronous and runs directly in the axum handler without spawn_blocking. Enough concurrent PUTs could occupy all tokio worker threads and delay other tasks, including the pruner and health checks. This is hypothesis-level: the per-request cost has not been measured here, and the known limit already covers flood cost.",
+        "evidence": "async fn put_record(State(dir): State<Dir>, body: Bytes) -> Response { let rec = match VerifiedRecord::verify(&body) { Ok(rec) => rec, ...",
+        "suggested_fix": "Run verification with tokio::task::spawn_blocking, or bound concurrent verifications with a semaphore, and measure per-PUT latency under load.",
+        "validation_needed": "Benchmark PUT throughput with 16-identity records and check whether health latency rises under concurrent load on a small worker pool.",
+        "lens": "panics",
+        "module": "records",
+        "id": "records/panics#2"
+      }
+    ],
+    "limitations": [
+      "The deployment's runtime flavour, worker count, and any proxy or concurrency limits in front of the directory are not in the supplied source.",
+      "The CLI startup code and the callers of serve, store and sign_record are not supplied, so panic reachability from them and shutdown ordering could not be checked.",
+      "The iroh and axum internals (for example postcard's allocation limits and axum's handling of connection errors) are not in the supplied source and were assumed to behave as documented.",
+      "Clippy lint hits such as expect_used in signer.rs and the store's expect('poisoned') calls were judged unreachable from remote input, because no panic can occur while those locks are held; this was not verified by test.",
+      "Tests were read but not run; the concurrency behaviour of the store under parallel inserts was not exercised."
+    ],
+    "lens": "panics"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 34401,
+    "output_tokens": 5448,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0061641000000000005
+}

@@ -1,0 +1,90 @@
+{
+  "module": "harness-python",
+  "lens": "leaks",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "harness/lab/tools/reflector.py",
+      "sha256": "eee1dfab3aeccdec8f1482bfeba4431d136031bb901a6a6edf7246682fddc7ed",
+      "lines": 137
+    },
+    {
+      "file": "harness/lab/tools/natcheck.py",
+      "sha256": "57c1a3c2a7110410ec65739c60e610ae07c63301f9dd5b5f75315995e0b40db1",
+      "lines": 195
+    },
+    {
+      "file": "harness/security_scan.py",
+      "sha256": "8c5712fa22a61e3b7e4208214269ea3227399fc0b19f5c41bc72f3b5eac5ec9a",
+      "lines": 378
+    },
+    {
+      "file": "harness/security_graph.py",
+      "sha256": "08a394b05e1e711a49240fdc54c374da2325778aab0d8e4c7c9e45f3da57b52b",
+      "lines": 650
+    },
+    {
+      "file": "harness/security_tools.py",
+      "sha256": "831adf8b65164f0300b1933d6138b35f038cfb7e4dabc8e77b5c6238f3222a51",
+      "lines": 454
+    },
+    {
+      "file": "harness/render_security_report.py",
+      "sha256": "59877bd51adb512a5ea30940915542b9f33bce6317a8442ad3db509b2c30bc06",
+      "lines": 525
+    }
+  ],
+  "review": {
+    "summary": "Reviewed the six harness Python files for secrets, logging and information leaks. Rendering escapes model text consistently and the scan error paths print only exception type and HTTP status, so the main concern is the Anthropic key reaching child processes. The reflector and NAT checker expose no secrets. Two low-to-medium items remain, both hypotheses that need a test.",
+    "findings": [
+      {
+        "title": "Anthropic API key is inherited by every deterministic tool subprocess",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "harness/security_tools.py",
+        "line": 55,
+        "prerequisites": "The operator exports ANTHROPIC_API_KEY in the environment before running harness/security_graph.py (the non-interactive path). A tool then runs in the working tree, for example cargo clippy or cargo audit, which compiles and runs build.rs scripts of workspace crates and dependencies, or semgrep runs rules. The working tree may hold uncommitted changes, since run_tools reads ROOT and not the --source-ref commit.",
+        "impact": "Any code executed by a deterministic tool can read the API key from its environment and send it elsewhere. The key is also present in the environment of every child process, although the interactive getpass path avoids this.",
+        "evidence": "self.env = dict(os.environ, PATH=f\"{tools_dir}:{os.environ.get('PATH', '')}\", CARGO_TERM_COLOR=\"never\", NO_COLOR=\"1\") and then subprocess.run(cmd, cwd=cwd, env=self.env, ...) in Runner.run at line 66. api_key() in security_graph.py reads the same variable only after the tools have already run.",
+        "suggested_fix": "Build the tool environment from an explicit allowlist (PATH, HOME, CARGO_HOME, RUSTUP_HOME, CARGO_TARGET_DIR, locale) and remove ANTHROPIC_API_KEY and other *_KEY, *_TOKEN variables. Pass the key only to the AsyncAnthropic constructor.",
+        "validation_needed": "Export a sentinel ANTHROPIC_API_KEY, add a build.rs under a temporary workspace crate that writes the variable to a file, run security_tools with --only clippy-panics, and check whether the sentinel appears. This is a hypothesis until that test is run.",
+        "lens": "leaks",
+        "module": "harness-python",
+        "id": "harness-python/leaks#1"
+      },
+      {
+        "title": "Working-tree file names, including untracked files, are written into the run report",
+        "severity": "low",
+        "confidence": "high",
+        "file": "harness/security_graph.py",
+        "line": 516,
+        "prerequisites": "Untracked local files exist in the working tree at scan time, such as key files, .env files or local notes. The report is written to the run directory and is not redacted.",
+        "impact": "The names of untracked files are published in plan.json and summary.json. This can reveal the existence of secret material, which is minor in practice but is an unnecessary disclosure.",
+        "evidence": "\"git_status\": single.git(\"status\", \"--porcelain\").splitlines(), inside the metadata dict that is written to plan.json at line 537 and merged into summary.json.",
+        "suggested_fix": "Record only the count of modified and untracked entries, or restrict the status to tracked paths (git status --porcelain --untracked-files=no), and drop path names from the artifact.",
+        "validation_needed": "Create an untracked file with a distinctive name, run harness/security_graph.py --dry-run, and check whether the name appears in plan.json. This is a demonstrated behaviour but its impact depends on where the run directory is stored.",
+        "lens": "leaks",
+        "module": "harness-python",
+        "id": "harness-python/leaks#2"
+      }
+    ],
+    "limitations": [
+      "Deployment context is not in the supplied files: whether run directories are committed, shared or uploaded as CI artifacts, and what the umask and file permissions of those directories are.",
+      "Behaviour of the external tools (cargo build scripts, semgrep, gitleaks, osv-scanner) is not visible; the environment finding depends on what those tools execute.",
+      "The record and registry modules and the Rust sources were not supplied, so the scan's use of the key and its handling in the Rust side could not be checked.",
+      "The Haiku model's behaviour and the provider's error-body contents are not verifiable from the source; the code's handling of them is taken as written.",
+      "The reflector's VIA field reveals the socket's bound address by design; whether the lab binds it to a specific internal address was not visible, so no finding was made on that basis."
+    ],
+    "lens": "leaks"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 53059,
+    "output_tokens": 5605,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0081084
+}

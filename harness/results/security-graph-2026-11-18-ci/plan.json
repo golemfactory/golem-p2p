@@ -1,0 +1,211 @@
+{
+  "kind": "security_graph",
+  "scanner_model": "claude-haiku-5-5",
+  "summary_model": "claude-opus-5-5",
+  "scanner_thinking": "medium",
+  "summary_thinking": "high",
+  "git_head": "321ba2de6a5c874e809489549251fb70f5091c6b",
+  "git_status": [],
+  "source_commit": "321ba2de6a5c874e809489549251fb70f5091c6b",
+  "source": "git HEAD",
+  "pydantic_ai_version": "2.68.0",
+  "limits": {
+    "scanner_input_tokens": 60000,
+    "scanner_output_tokens": 16000,
+    "summary_input_tokens": 150000,
+    "summary_output_tokens": 48000,
+    "requests": 31,
+    "concurrency": 4,
+    "retries": 0
+  },
+  "pricing_usd_per_mtok": {
+    "claude-haiku-5-5": [
+      0.1,
+      0.5
+    ],
+    "claude-opus-5-5": [
+      4.0,
+      20.0
+    ]
+  },
+  "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing (checked 2026-11-18)",
+  "estimated_max_usd": 1.98,
+  "max_graph_usd": 3.0,
+  "modules": {
+    "records": {
+      "files": [
+        "crates/golem-p2p/src/record.rs",
+        "crates/golem-p2p/src/identity.rs",
+        "crates/golem-p2p/src/signer.rs",
+        "crates/golem-p2p/src/store.rs",
+        "crates/golem-p2p/src/directory.rs"
+      ],
+      "lenses": [
+        "dos",
+        "auth",
+        "crypto",
+        "panics",
+        "leaks"
+      ]
+    },
+    "handshake": {
+      "files": [
+        "crates/golem-p2p/src/endpoint.rs",
+        "crates/golem-p2p/src/wire.rs",
+        "crates/golem-p2p/src/error.rs"
+      ],
+      "lenses": [
+        "dos",
+        "auth",
+        "crypto",
+        "panics",
+        "leaks"
+      ]
+    },
+    "closed-network": {
+      "files": [
+        "crates/golem-p2p/src/membership.rs",
+        "crates/golem-p2p/src/registry.rs",
+        "crates/golem-p2p/src/discovery.rs",
+        "crates/golem-p2p/src/lookup.rs",
+        "crates/golem-p2p-cli/src/registry.rs"
+      ],
+      "lenses": [
+        "dos",
+        "auth",
+        "crypto",
+        "panics",
+        "leaks"
+      ]
+    },
+    "cli-servers": {
+      "files": [
+        "crates/golem-p2p-cli/src/listen.rs",
+        "crates/golem-p2p/src/addrs.rs"
+      ],
+      "lenses": [
+        "dos",
+        "panics",
+        "leaks"
+      ]
+    },
+    "telemetry": {
+      "files": [
+        "crates/golem-p2p/src/telemetry.rs",
+        "crates/golem-p2p-cli/src/telemetry/mod.rs",
+        "crates/golem-p2p-cli/src/telemetry/collector.rs"
+      ],
+      "lenses": [
+        "dos",
+        "auth",
+        "crypto",
+        "panics",
+        "leaks"
+      ]
+    },
+    "cli-client": {
+      "files": [
+        "crates/golem-p2p-cli/src/main.rs",
+        "crates/golem-p2p-cli/src/parse.rs",
+        "crates/golem-p2p-cli/src/out.rs",
+        "crates/golem-p2p-cli/src/observe.rs",
+        "crates/golem-p2p-cli/src/probe.rs",
+        "crates/golem-p2p/src/lib.rs"
+      ],
+      "lenses": [
+        "dos",
+        "panics",
+        "leaks"
+      ]
+    },
+    "bench-soak": {
+      "files": [
+        "crates/golem-p2p-cli/src/bench/mod.rs",
+        "crates/golem-p2p-cli/src/bench/local.rs",
+        "crates/golem-p2p-cli/src/soak.rs"
+      ],
+      "lenses": [
+        "dos",
+        "panics"
+      ]
+    },
+    "harness-python": {
+      "files": [
+        "harness/lab/tools/reflector.py",
+        "harness/lab/tools/natcheck.py",
+        "harness/security_scan.py",
+        "harness/security_graph.py",
+        "harness/security_tools.py",
+        "harness/render_security_report.py"
+      ],
+      "lenses": [
+        "dos",
+        "leaks"
+      ]
+    }
+  },
+  "scanners_planned": [
+    "records/dos",
+    "records/auth",
+    "records/crypto",
+    "records/panics",
+    "records/leaks",
+    "handshake/dos",
+    "handshake/auth",
+    "handshake/crypto",
+    "handshake/panics",
+    "handshake/leaks",
+    "closed-network/dos",
+    "closed-network/auth",
+    "closed-network/crypto",
+    "closed-network/panics",
+    "closed-network/leaks",
+    "cli-servers/dos",
+    "cli-servers/panics",
+    "cli-servers/leaks",
+    "telemetry/dos",
+    "telemetry/auth",
+    "telemetry/crypto",
+    "telemetry/panics",
+    "telemetry/leaks",
+    "cli-client/dos",
+    "cli-client/panics",
+    "cli-client/leaks",
+    "bench-soak/dos",
+    "bench-soak/panics",
+    "harness-python/dos",
+    "harness-python/leaks"
+  ],
+  "prompt_bytes": {
+    "records/dos": 79961,
+    "records/auth": 78148,
+    "records/crypto": 78077,
+    "records/panics": 80028,
+    "records/leaks": 78099,
+    "handshake/dos": 119137,
+    "handshake/auth": 115991,
+    "handshake/crypto": 115920,
+    "handshake/panics": 119204,
+    "handshake/leaks": 115942,
+    "closed-network/dos": 76962,
+    "closed-network/auth": 75431,
+    "closed-network/crypto": 75360,
+    "closed-network/panics": 77029,
+    "closed-network/leaks": 75382,
+    "cli-servers/dos": 44484,
+    "cli-servers/panics": 44551,
+    "cli-servers/leaks": 43446,
+    "telemetry/dos": 131786,
+    "telemetry/auth": 126696,
+    "telemetry/crypto": 126625,
+    "telemetry/panics": 131853,
+    "telemetry/leaks": 126647,
+    "cli-client/dos": 132160,
+    "cli-client/panics": 132227,
+    "cli-client/leaks": 128204,
+    "bench-soak/dos": 130806,
+    "bench-soak/panics": 130873,
+    "harness-python/dos": 131711,
+    "harness-python/leaks": 131603
+  }
+}

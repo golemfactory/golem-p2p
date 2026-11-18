@@ -1,0 +1,75 @@
+{
+  "module": "bench-soak",
+  "lens": "dos",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p-cli/src/bench/mod.rs",
+      "sha256": "523a23d39999d117417019a9dc03fa401b54b67c38382541ea4453cd3eec4554",
+      "lines": 1716
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/bench/local.rs",
+      "sha256": "4b6a10aa97c10b8a2669624adc41bbdf2400521314147452740aa85fe335d5b4",
+      "lines": 399
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/soak.rs",
+      "sha256": "618a5a687767690004e2d45c505022e16377ae5fb579e93f04757fbc1e295e22",
+      "lines": 802
+    }
+  ],
+  "review": {
+    "summary": "Reviewed bench/mod.rs, bench/local.rs and soak.rs for input parsing, DoS and resource bounds. The client-side reads of peer data are mostly bounded: the upload refusal reply is read with a 4096-byte cap and a 10 s timeout, the local relay HTTP probe is capped at 1024 bytes under a 5 s timeout, and concurrency workers are bounded by --concurrency-size. Two hypotheses remain, both depending on golem-p2p code that is not in the supplied files.",
+    "findings": [
+      {
+        "title": "Echo reply from a malicious listener is buffered without a size check before the byte comparison",
+        "severity": "medium",
+        "confidence": "low",
+        "file": "crates/golem-p2p-cli/src/bench/mod.rs",
+        "line": 653,
+        "prerequisites": "A malicious peer that the operator benchmarks with `bench --to`, and whose reply to an echo request is larger than the request. The golem-p2p request path must not cap reply size, which this file does not show.",
+        "impact": "If `ep.request` does not cap the reply, a malicious listener can make the client allocate its whole reply in memory before the `ends_with` check. Concurrency runs up to 64 streams, so the allocation multiplies by the stream count.",
+        "evidence": "let reply = ep.request(to, &payload).await?; if !reply.ends_with(&payload) { bail!(\"unexpected reply\"); }",
+        "suggested_fix": "Confirm the reply cap in golem-p2p's request implementation. If it is absent or larger than the request size, cap replies at the request size plus a small margin. Compare the length first and reject oversized replies before buffering.",
+        "validation_needed": "Hypothesis, not demonstrated. Run a test listener that answers a 64-byte request with a 1 GiB reply and measure the client's peak RSS. The same test applies to the soak requester at soak.rs:348.",
+        "lens": "dos",
+        "module": "bench-soak",
+        "id": "bench-soak/dos#1"
+      },
+      {
+        "title": "Lookup-time map keyed by peer id grows with every lookup and is never pruned",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p-cli/src/bench/mod.rs",
+        "line": 250,
+        "prerequisites": "The endpoint calls `Discovery::lookup` for node IDs that the peer chooses, for example identities taken from incoming connections or relay-compare traffic. The source given here does not show that path.",
+        "impact": "The map gains one entry per distinct node ID looked up. Those IDs can be attacker-chosen, so a peer that causes many lookups makes the map grow without bound for the life of the bench run. The run is short, so the impact is limited.",
+        "evidence": "self.lookups.lock().expect(\"poisoned\").insert(id, start.elapsed());",
+        "suggested_fix": "Store only the lookup time for the `to` node and the relay-compare node, or cap the map size and evict. Alternatively keep only the most recent lookup for `to`.",
+        "validation_needed": "Hypothesis. Check whether golem-p2p calls Discovery::lookup for inbound or attacker-supplied IDs. If it does, count map entries after a run in which a peer triggers many such lookups.",
+        "lens": "dos",
+        "module": "bench-soak",
+        "id": "bench-soak/dos#2"
+      }
+    ],
+    "limitations": [
+      "golem-p2p's request, reply-size and connection code is not in the supplied files, so the reply-size bound for ep.request cannot be confirmed.",
+      "Whether the endpoint looks up peer-supplied node IDs through the Discovery trait is not shown.",
+      "Path-change and PathLog growth, and Pinger sample accumulation (probe module), are not in the supplied files.",
+      "The HTTP directory client's response body limit (HttpDirectory::lookup) is outside the supplied code. Directories are operator-configured, so they fall under the trusted-operator assumption.",
+      "Tests were reviewed for their content only; they were not run."
+    ],
+    "lens": "dos"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 54781,
+    "output_tokens": 5448,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0082021
+}

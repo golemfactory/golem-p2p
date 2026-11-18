@@ -1,0 +1,70 @@
+{
+  "module": "records",
+  "lens": "dos",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/record.rs",
+      "sha256": "840e094e6272521849a45d3138bcf9f3597cb55be069cc2e42d0806eb271f0eb",
+      "lines": 721
+    },
+    {
+      "file": "crates/golem-p2p/src/identity.rs",
+      "sha256": "3b1f8daa7a207afbc75e06b2fe9bf0f994e59f2de58c9e275924dfd75d92032e",
+      "lines": 230
+    },
+    {
+      "file": "crates/golem-p2p/src/signer.rs",
+      "sha256": "f0886277410202573aef33f6932c9ead958dea9a9af1f202dfb80953fb66df7e",
+      "lines": 199
+    },
+    {
+      "file": "crates/golem-p2p/src/store.rs",
+      "sha256": "c60552af3563f261d1b40c94c3a1a821e1b87ffefc5a6d7189b57dd84d5a9079",
+      "lines": 529
+    },
+    {
+      "file": "crates/golem-p2p/src/directory.rs",
+      "sha256": "745d576c86e8af0cd08a15a96589f13b2b7b99f62c55cdbcfdae6e04eae2b1e1",
+      "lines": 117
+    }
+  ],
+  "review": {
+    "summary": "Reviewed record decoding, validation, the record store and the HTTP directory for input parsing, DoS and resource bounds. Decoding is bounded by MAX_RECORD_SIZE before parsing, collection counts are checked before signature work, and expiry arithmetic is validated before SystemTime addition. The one concrete concern is that the directory server sets no connection, read or concurrency limits of its own. This is a hypothesis that needs a test, since hyper or a fronting proxy may supply the timeouts.",
+    "findings": [
+      {
+        "title": "Directory server sets no per-connection read timeout or concurrency cap (hypothesis)",
+        "severity": "medium",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/directory.rs",
+        "line": 83,
+        "prerequisites": "The directory is reachable by anonymous clients with no proxy in front that enforces read timeouts or connection limits. The task says the proxy normally provides this, so the finding applies only when the proxy does not.",
+        "impact": "A client that opens many TCP connections and sends headers or a PUT body slowly, or not at all, can hold connection tasks open indefinitely. The only bound is the 4096-byte body limit, which caps size but not time or connection count, so this can exhaust tasks and file descriptors.",
+        "evidence": "serve_with_policy calls `let res = axum::serve(listener, router_with_policy(store, policy)).await;` with no timeout layer and no connection limit. The only limit in router_with_policy is `.layer(DefaultBodyLimit::max(MAX_RECORD_SIZE))`, which bounds size, not duration.",
+        "suggested_fix": "Wrap the router in a timeout layer (for example tower-http TimeoutLayer or tower::timeout) and bound concurrent connections (for example a tower ConcurrencyLimitLayer or a semaphore around accept). Alternatively document that the proxy must enforce both and add a test that a stalled PUT is closed.",
+        "validation_needed": "Run the directory without a proxy and open 1000 connections that send a partial PUT header or body and then stall. Measure whether the connections and tasks persist after 60 seconds, and check which header_read_timeout and body timeouts axum and hyper apply by default.",
+        "lens": "dos",
+        "module": "records",
+        "id": "records/dos#1"
+      }
+    ],
+    "limitations": [
+      "The axum and hyper versions and their default timeout settings are not in the supplied files, so the timeout finding cannot be confirmed from this source alone.",
+      "The deployment proxy, rate limiting and TLS termination are not in the supplied files, and the task states they belong there.",
+      "The membership module (MembershipPolicy::check_record and certificate decoding) is referenced but not supplied, so its parsing cost and bounds are not reviewed.",
+      "The iroh endpoint and discovery wiring that consumes VerifiedRecord, and the caller of serve, are not supplied, so the path from network input to these functions is only partly traced.",
+      "No tests were run; the analysis is by reading the supplied code and the tool results given in the task."
+    ],
+    "lens": "dos"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 34363,
+    "output_tokens": 5599,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0062358000000000005
+}

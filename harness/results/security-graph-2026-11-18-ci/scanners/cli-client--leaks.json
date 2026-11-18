@@ -1,0 +1,91 @@
+{
+  "module": "cli-client",
+  "lens": "leaks",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p-cli/src/main.rs",
+      "sha256": "b577491be6114872a2d7710629e71d296b3cc9e3fbefa918b463f6291466cb04",
+      "lines": 823
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/parse.rs",
+      "sha256": "8aeb7929755179d9ae600b70a1e812f59393d0aa7b628bc8a8339353adcdf34a",
+      "lines": 220
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/out.rs",
+      "sha256": "998ea6a4cad3214dfb215ee8bb9e743749f55494df8fdef1a610bb2dfd1a4cbd",
+      "lines": 283
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/observe.rs",
+      "sha256": "1100ac7ee6f52d204cd969ca12913c85096c1bebdd00278f02213e105b33040c",
+      "lines": 378
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/probe.rs",
+      "sha256": "841a787691242a386597d98d938cf26d673845a4df096e34e82a3249cbf89ed6",
+      "lines": 1255
+    },
+    {
+      "file": "crates/golem-p2p/src/lib.rs",
+      "sha256": "0c3a1c44e97b2a89a5a3969eba9d2781806bec259fae8bb9781d2a889803d838",
+      "lines": 91
+    }
+  ],
+  "review": {
+    "summary": "One demonstrated terminal-output defect: text received from a remote listener is written to the operator's terminal without escaping in human mode. No secret key, token or registry state was found reaching logs, JSON events or files.",
+    "findings": [
+      {
+        "title": "Remote listener reply printed raw to the terminal in send",
+        "severity": "medium",
+        "confidence": "high",
+        "file": "crates/golem-p2p-cli/src/main.rs",
+        "line": 704,
+        "prerequisites": "The operator runs 'golem-p2p send' without --json against a node that an attacker controls, or that a malicious listener answers. The attacker controls the bytes of the echo reply.",
+        "impact": "The reply goes to stdout unchanged. A reply with newlines can forge additional output lines, and one with ANSI or OSC escape sequences can rewrite or hide earlier terminal output. Output piped into scripts can be spoofed the same way. JSON mode is not affected because serde escapes the text.",
+        "evidence": "println!(\"{} ({} ms, {})\", String::from_utf8_lossy(&reply), r.rtt.as_millis(), path_name(r.path)); where reply is the Ok(reply) value returned by pinger.ping, i.e. the peer's bytes.",
+        "suggested_fix": "Escape control characters before printing peer-supplied text in human mode, for example by replacing every char that is control (including ESC and newline) with a visible escape such as \\u{..}, or by printing hex when the reply is not printable ASCII. Apply the same helper to every human-mode print of peer text (see the probe.rs finding).",
+        "validation_needed": "Demonstrated by reading the code: a test listener that replies with a string containing a newline and ESC[2J should show the raw bytes on stdout. Confirm with a small harness run.",
+        "lens": "leaks",
+        "module": "cli-client",
+        "id": "cli-client/leaks#1"
+      },
+      {
+        "title": "Remote error and refusal text printed raw in probe and bench human output",
+        "severity": "low",
+        "confidence": "high",
+        "file": "crates/golem-p2p-cli/src/probe.rs",
+        "line": 348,
+        "prerequisites": "A malicious listener returns an unexpected reply, a refused reply with arbitrary detail text, or a status line that fails parsing. The operator runs probe or bench without --json.",
+        "impact": "The peer-controlled text (up to 200 bytes of an unexpected reply, up to 4096 bytes of a refusal, or up to 256 bytes of a download status line) is embedded in errors and printed with println! and eprintln!. This allows the same forged-line and terminal-escape injection as in the send finding. The main.rs 'Error: {e:?}' path also prints the error chain.",
+        "evidence": "Err(e) => println!(\"bulk {} bytes failed: {e:#}\", b.bytes), where e may come from Refused::parse(&reply) with reply built from the peer's bytes; probe.rs line 96 builds the message from String::from_utf8_lossy(&r[..r.len().min(200)]), and main.rs line 767 prints it with println!(\"seq={} failed after {} ms: {e:#}\", ...).",
+        "suggested_fix": "Sanitize at the source: when building 'unexpected reply' and Refused details from peer bytes, map control characters to escapes before they enter an error. That covers human output and anyhow chains, and the JSON path already escapes them.",
+        "validation_needed": "Hypothesis that needs a test: a listener that answers 'refused reason=x\\u001b[2J' or a newline-bearing string should produce unescaped terminal output in the human path. Verify by running the probe against a stub listener.",
+        "lens": "leaks",
+        "module": "cli-client",
+        "id": "cli-client/leaks#2"
+      }
+    ],
+    "limitations": [
+      "Source of record.rs, membership.rs, registry, telemetry, directory and listen modules and docs/cli-events.md was not supplied, so their logging, record and secret handling could not be traced.",
+      "Behaviour of the iroh and serde_json libraries was assumed, not checked; in particular, that serde_json escapes control characters in JSON string output.",
+      "The telemetry module, which may send identity or key data to a collector, was not reviewed; this file only passes the signer clone into it.",
+      "Registry URL handling (possible userinfo in --registry) depends on RegistryClient, which is outside the supplied files.",
+      "Other command-line values echoed into errors (quic_port, duration, bytes) are user input and were not treated as secret.",
+      "No runtime test was run; the findings rest on reading the code."
+    ],
+    "lens": "leaks"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 53450,
+    "output_tokens": 4700,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.007695
+}

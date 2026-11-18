@@ -1,0 +1,71 @@
+{
+  "module": "closed-network",
+  "lens": "crypto",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/membership.rs",
+      "sha256": "f08e6f76729fc89bbd8b1b946c12cd6772e309000d9cce96ca61255852d8f577",
+      "lines": 524
+    },
+    {
+      "file": "crates/golem-p2p/src/registry.rs",
+      "sha256": "1d59d61ebfd29293efe8e04b8717d755255946a6d4cff6ee4f4993dc92c4e621",
+      "lines": 562
+    },
+    {
+      "file": "crates/golem-p2p/src/discovery.rs",
+      "sha256": "acf74f06bebf66a23628bdeec86d3292409c7461eae6738d12c3962a67c4a135",
+      "lines": 329
+    },
+    {
+      "file": "crates/golem-p2p/src/lookup.rs",
+      "sha256": "d95a3dca506321926ea4d699dd346b16ccbddd6613e9fe065b507d1ed4b5a07e",
+      "lines": 43
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/registry.rs",
+      "sha256": "077bd7dbdf4e590634ff3f37a20ce5bce654b3aaf6b71681a72d0ca6f5aa7930",
+      "lines": 254
+    }
+  ],
+  "review": {
+    "summary": "Reviewed the closed-network membership certificate, registry and HTTP client code through the cryptography and signature lens. The certificate signature covers the exact stored payload bytes, trailing bytes are refused, the domain and network name are bound, the endpoint is bound, and the registry signs only records whose identities are all registered. The only demonstrated defect in this lens is in how the registry state file, which holds the signing key, is written. Other candidates (non-constant-time token hash comparison, lack of a permission check on load) are not exploitable from the supplied source or are already decided limits.",
+    "findings": [
+      {
+        "title": "Registry state temp file keeps pre-existing permissions and follows symlinks, so the signing key can be written to a world-readable or attacker-chosen file",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p/src/registry.rs",
+        "line": 175,
+        "prerequisites": "An attacker can create or replace the file registry.tmp (path.with_extension(\"tmp\")) in the state directory before a save, for example a leftover file with mode 0644 or a symlink. This needs local write access to the state directory, which is already close to owning the registry.",
+        "impact": "Each save writes the full state JSON, including the hex Ed25519 secret key that signs all membership certificates, into registry.tmp. write_private uses OpenOptions::mode(0o600), but mode only applies when the file is created. If the file already exists, its old mode is kept, so the signing key can be readable by other users. Without O_NOFOLLOW or create_new, a symlink at that path redirects the key write to an arbitrary file. A leaked signing key lets the attacker issue certificates for any endpoint and identity in the network.",
+        "evidence": "Line 175: let tmp = path.with_extension(\"tmp\"); line 177: write_private(&tmp, text.as_bytes()); lines 240-245: OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path)?; The state struct holds secret_key: String, documented as 'The signing key, hex.'",
+        "suggested_fix": "Create the temporary file with create_new(true) and a random suffix in the same directory (for example via the tempfile crate), so an existing file or symlink is never reused. Set permissions with set_permissions(0o600) on the open handle before writing, or use fchmod. Then rename into place. Optionally refuse to load a state file whose mode allows group or other access.",
+        "validation_needed": "Hypothesis, not run: create registry.tmp with mode 0644 (or as a symlink to a file in another directory), call RegistryState::save, and check the resulting file mode and target. A unit test in the registry module would show it.",
+        "lens": "crypto",
+        "module": "closed-network",
+        "id": "closed-network/crypto#1"
+      }
+    ],
+    "limitations": [
+      "record.rs (VerifiedRecord::verify, record signature domain and message encoding) is not supplied, so domain separation between record and certificate signatures and the exact signed bytes of records could not be checked.",
+      "The caller that decodes and checks the certificate returned by RegistryClient::certify (the Mismatch path) is outside the supplied files, so the client's returned bytes are not verified here.",
+      "Token and admin-token hash comparisons use ordinary equality on SHA-256 digests of 256-bit random tokens. This is not treated as a finding because the timing leak is of a preimage-resistant hash and is not practically exploitable.",
+      "The telemetry, directory server and iroh endpoint integration code that consumes certificates are not supplied, so cert-to-connection enforcement is not reviewed.",
+      "Deterministic tool results (cargo-audit, osv-scanner, clippy, semgrep) were not repeated, as instructed.",
+      "Decided limits (registration without proof of possession, eviction, certificate not covered by record signatures, plain HTTP directory) were not re-reported."
+    ],
+    "lens": "crypto"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 30508,
+    "output_tokens": 9118,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0076098
+}

@@ -1,0 +1,91 @@
+{
+  "module": "cli-client",
+  "lens": "dos",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p-cli/src/main.rs",
+      "sha256": "b577491be6114872a2d7710629e71d296b3cc9e3fbefa918b463f6291466cb04",
+      "lines": 823
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/parse.rs",
+      "sha256": "8aeb7929755179d9ae600b70a1e812f59393d0aa7b628bc8a8339353adcdf34a",
+      "lines": 220
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/out.rs",
+      "sha256": "998ea6a4cad3214dfb215ee8bb9e743749f55494df8fdef1a610bb2dfd1a4cbd",
+      "lines": 283
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/observe.rs",
+      "sha256": "1100ac7ee6f52d204cd969ca12913c85096c1bebdd00278f02213e105b33040c",
+      "lines": 378
+    },
+    {
+      "file": "crates/golem-p2p-cli/src/probe.rs",
+      "sha256": "841a787691242a386597d98d938cf26d673845a4df096e34e82a3249cbf89ed6",
+      "lines": 1255
+    },
+    {
+      "file": "crates/golem-p2p/src/lib.rs",
+      "sha256": "0c3a1c44e97b2a89a5a3969eba9d2781806bec259fae8bb9781d2a889803d838",
+      "lines": 91
+    }
+  ],
+  "review": {
+    "summary": "Reviewed the CLI client paths (probe, bench-adjacent transfers, status-line parsing, output and observation) for input parsing and resource bounds. One demonstrated panic on untrusted listener bytes in the download status parser, and one unbounded-read hypothesis in the download loop. Other lens candidates were checked and dropped as bounded or CLI-local.",
+    "findings": [
+      {
+        "title": "Download status parser panics on a non-char-boundary slice of listener-controlled text",
+        "severity": "high",
+        "confidence": "high",
+        "file": "crates/golem-p2p-cli/src/probe.rs",
+        "line": 789,
+        "prerequisites": "The user runs probe --bulk-related download, or bench/soak download, against a node that is malicious or replaced by an impostor that answers the download request. The listener sends a first line that does not start with 'ok bytes=' and contains no newline, e.g. 'a' followed by 150 two-byte UTF-8 characters, then closes the stream. Nothing else is required.",
+        "impact": "The client process panics and aborts mid-run, losing the rest of the measurement and its JSON summary. A single hostile reply from a listener is enough to crash the CLI.",
+        "evidence": "read_status_line returns the whole buffer lossy-decoded when it is longer than 256 bytes or the stream ends without a newline (lines 851-859). In download, the status is checked with strip_prefix (line 784), and on failure the error context slices with: &status[..status.len().min(100)] (line 789). The slice index is a byte index on a String, so it panics when byte 100 falls inside a multi-byte character. 'a' followed by 'é' repeated 150 times puts byte 100 in the middle of a character.",
+        "suggested_fix": "Truncate by characters, not bytes, for the message, e.g. status.chars().take(100).collect::<String>(), or truncate at a char boundary with floor_char_boundary-style logic. Also cap the status buffer during reading: check buf.len() before extending it with the whole chunk rather than after, and return an error when no newline appears within 256 bytes.",
+        "validation_needed": "Demonstrated code defect by inspection. Confirm with a unit test that calls the error path of download with a 301-byte status of the form 'a' followed by 150 'é' and no newline, using a mock RecvStream or a loopback listener that writes that and finishes.",
+        "lens": "dos",
+        "module": "cli-client",
+        "id": "cli-client/dos#1"
+      },
+      {
+        "title": "Download reads without a deadline and never enforces the announced size while reading",
+        "severity": "medium",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/probe.rs",
+        "line": 797,
+        "prerequisites": "download is called with max_time None, which the code allows (the deadline is optional), and the listener is malicious. It announces a small 'ok bytes=N' and then keeps sending data, or sends it slowly, without ever finishing the stream. Whether any caller passes None is not visible in the supplied files (bench and soak are not supplied).",
+        "impact": "The download loop reads until the stream ends with no bound on time or bytes. got is only compared with announced after the loop (line 828), so the excess is consumed and counted, not refused. A listener can hold the client's task and its bandwidth indefinitely, and the bench or soak run never finishes.",
+        "evidence": "With no deadline, the loop is: None => recv.read_chunk(usize::MAX).await, and it breaks only on Ok(None) or a read error (lines 807-823). The size check comes only afterwards: if !by_time && got != announced { bail!(...) } (lines 828-830). Nothing stops reading once got exceeds announced. Also, read_status_line is awaited with no timeout when max_time is None (line 778).",
+        "suggested_fix": "Stop reading once got reaches announced (read exactly announced bytes, and treat anything beyond as a protocol error). Apply a default timeout to the status read and to the body read, or make max_time mandatory for download. Bound the total time by the transfer timeout passed in from the callers.",
+        "validation_needed": "Hypothesis until the callers are checked: confirm whether any call site passes max_time None. If one does, a test with a listener that sends more than announced bytes and then stalls should show the loop running past the expected end. Demonstrated for the code shown.",
+        "lens": "dos",
+        "module": "cli-client",
+        "id": "cli-client/dos#2"
+      }
+    ],
+    "limitations": [
+      "bench.rs, soak.rs, listen.rs, registry.rs and telemetry modules are not supplied, so callers of download (including whether max_time is ever None) and the listener side constants (MAX_REQUEST, REFUSED, SINK_MAGIC) are unverified.",
+      "golem_p2p endpoint and transport code (request timeouts, connection caps, the QUIC stream window that bounds read_chunk sizes) is not supplied; bounds were taken from the stated limits and comments.",
+      "The Endpoint::request path used by Pinger::ping has no explicit timeout in this file for the send command, where no timeout is set; the library default is unknown.",
+      "record.rs limits were taken from the review brief and not verified in source.",
+      "Clippy panic-surface hits (expect, indexing, arithmetic) were not individually reviewed as remotely reachable beyond the findings above; most are local or CLI-argument driven.",
+      "Output volume driven by remote peers (conn and path_change events on listen --json) was considered but not reported: it depends on connection caps outside this module."
+    ],
+    "lens": "dos"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 55538,
+    "output_tokens": 5458,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0082828
+}

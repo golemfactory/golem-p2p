@@ -1,0 +1,75 @@
+{
+  "module": "handshake",
+  "lens": "leaks",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/endpoint.rs",
+      "sha256": "920391c16aced7b2daac6951cb0af45b7a9557b04bb9cb75652961f320b1af63",
+      "lines": 2328
+    },
+    {
+      "file": "crates/golem-p2p/src/wire.rs",
+      "sha256": "68526624080bff28255ecd7ab05f7b587650516f9e36d437f44610a191faad94",
+      "lines": 187
+    },
+    {
+      "file": "crates/golem-p2p/src/error.rs",
+      "sha256": "dc5435fff4367a692429fe25d68391c2f1e9f2e4b831b8dae593285c439e00a9",
+      "lines": 81
+    }
+  ],
+  "review": {
+    "summary": "Reviewed endpoint.rs, wire.rs and error.rs through the secrets, logging and information-leak lens. No secret key, token or registry state reaches logs, Debug/Display output or remote peers in these files; the secret key is excluded from Builder and Endpoint Debug output, and reject and close paths send only fixed codes and fixed strings. Two low-confidence hypotheses remain, both needing a test or a check of the consuming application.",
+    "findings": [
+      {
+        "title": "Peer-controlled QUIC close reason is turned into a String in the Disconnected event",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/endpoint.rs",
+        "line": 1791,
+        "prerequisites": "A connected peer closes the connection with an application close reason containing arbitrary bytes, such as newlines or terminal escape sequences. An application subscribes to Event::Disconnected and writes its reason field to logs or a terminal without escaping.",
+        "impact": "Forged log lines or terminal escape sequences could be injected by a remote peer, if the consuming application logs the reason unescaped. Nothing in this file writes the reason to logs itself.",
+        "evidence": "close_watcher: let reason = c.inner.conn.closed().await; ... inner.emit(Event::Disconnected { peer: c.peer(), reason: reason.to_string(), });",
+        "suggested_fix": "Document that Event::Disconnected.reason is untrusted peer text, or replace it with a sanitized form (for example the QUIC error code and a length-limited printable subset) before emitting the event.",
+        "validation_needed": "Hypothesis. Confirm what quinn's Display of ApplicationClosed prints for peer-supplied reason bytes, and write a test that closes with a newline-containing reason and checks the event string.",
+        "lens": "leaks",
+        "module": "handshake",
+        "id": "handshake/leaks#1"
+      },
+      {
+        "title": "Private and VPN direct addresses are sent to every authenticated peer inside the record",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/endpoint.rs",
+        "line": 733,
+        "prerequisites": "An attacker completes the handshake as an ordinary peer in an open network, which needs no membership. The node's LAN, VPN or non-default interface addresses are present in its published direct addresses, which the default policy only partly filters (it removes container bridges, and VPN interfaces are published by default).",
+        "impact": "A remote peer learns internal address layout (RFC1918 LAN addresses and VPN addresses) that it does not need for connectivity, since those addresses are also sent in Welcome and Update frames to every authenticated peer.",
+        "evidence": "build_and_sign: let record = NodeRecord { ... relay_urls, direct_addrs, }; and accept_incoming sends Control::Welcome { record: local.to_bytes().to_vec() } (line 1195) with the same record.",
+        "suggested_fix": "Limit the record sent over the wire to the addresses needed for dialing, or keep private addresses out of the record unless the user opts in. Document that the default publishes private addresses to peers.",
+        "validation_needed": "Design question more than a code defect. Confirm with the design document whether publishing private addresses to every peer is intended, and check the addrs::select output for a typical host.",
+        "lens": "leaks",
+        "module": "handshake",
+        "id": "handshake/leaks#2"
+      }
+    ],
+    "limitations": [
+      "record.rs, addrs.rs, membership.rs, discovery.rs, identity.rs and signer.rs are not supplied; their Display or Debug output, and what the registry or directory logs or returns, could not be checked.",
+      "The Display text of iroh and quinn errors (Error::Connect, Error::Connection, FrameError::Io) was not checked; if an application returns these to remote peers, internal addresses could leak.",
+      "Application code that consumes Event, IncomingStream or Error, and any server that forwards error text to remote peers, is not in the supplied files.",
+      "Whether the peer-visible reject reasons (UnknownIdentity, NotMember, SUPERSEDED) reveal membership or instance state more than needed was judged as decided by the design, not reported.",
+      "The exact text quinn produces for peer-supplied close reasons was not verified."
+    ],
+    "lens": "leaks"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 46554,
+    "output_tokens": 4682,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.006996400000000001
+}

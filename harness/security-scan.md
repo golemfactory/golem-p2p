@@ -388,5 +388,31 @@ Tools on `main` at `a0fdc67`, in `harness/results/security-graph-2026-11-18/`
   operator. The rest are low: `temp_dir` in tests, binds to all interfaces
   in natcheck, the soak `unsafe`, `csv` without defusedcsv in a summarizer.
 
-The model stages did not run on 2026-11-18: no Anthropic API key was
-available on the host. Run them on the same directory with `--reuse-tools`.
+The model stages did not run locally on 2026-11-18 (no Anthropic API key on
+the host). They ran the same day in the manual workflow, scope `graph`
+(run 44298632395, commit 321ba2d, 10 min 46 s); the result is in
+`harness/results/security-graph-2026-11-18-ci/` (without the raw tool output,
+which is in the run's artifact for 14 days). All 30 scanners and the summary
+completed. Tokens: scanners 1,264,706 in and 193,249 out ($0.22), summary
+84,054 in and 31,140 out ($0.96), $1.18 in total by the configured rates.
+The scanners reported 79 findings; the summary merged them into 50
+candidates (2 high, 12 medium, 36 low; 13 IDs as noise, 2 as known limits).
+Checked by hand afterwards:
+
+* `probe.rs:789`: confirmed. The download error path slices the peer's
+  status text at byte 100, which panics on a multi-byte character there
+  (CLI client only).
+* `registry.rs:240`: confirmed. The state's temporary file keeps the mode
+  of a file already at that path (needs local write access to the state
+  directory).
+* Collector arithmetic on member-reported numbers (`collector.rs:566`, `630`,
+  `204`): overflows; the release profile has no overflow checks, so it
+  wraps there and panics only in debug builds.
+* Collector link history: each report is capped at
+  `MAX_REPORT_CONNECTIONS`, but distinct peer IDs across reports are not,
+  so a member can grow the history (member-signed reports only).
+* `endpoint.rs:1100` (connection table filled by idle peers after a
+  successful handshake): plausible in an open network, needs a test with
+  iroh's idle timeout; in the closed testnet it needs a member certificate.
+
+None of them is fixed yet.

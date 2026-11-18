@@ -1,0 +1,101 @@
+{
+  "module": "records",
+  "lens": "crypto",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p/src/record.rs",
+      "sha256": "840e094e6272521849a45d3138bcf9f3597cb55be069cc2e42d0806eb271f0eb",
+      "lines": 721
+    },
+    {
+      "file": "crates/golem-p2p/src/identity.rs",
+      "sha256": "3b1f8daa7a207afbc75e06b2fe9bf0f994e59f2de58c9e275924dfd75d92032e",
+      "lines": 230
+    },
+    {
+      "file": "crates/golem-p2p/src/signer.rs",
+      "sha256": "f0886277410202573aef33f6932c9ead958dea9a9af1f202dfb80953fb66df7e",
+      "lines": 199
+    },
+    {
+      "file": "crates/golem-p2p/src/store.rs",
+      "sha256": "c60552af3563f261d1b40c94c3a1a821e1b87ffefc5a6d7189b57dd84d5a9079",
+      "lines": 529
+    },
+    {
+      "file": "crates/golem-p2p/src/directory.rs",
+      "sha256": "745d576c86e8af0cd08a15a96589f13b2b7b99f62c55cdbcfdae6e04eae2b1e1",
+      "lines": 117
+    }
+  ],
+  "review": {
+    "summary": "Reviewed record signing and verification, identity recovery, and the record store and directory for cryptography and signature use. The core checks hold: the endpoint and every listed identity sign the SHA-256 digest of the exact payload bytes that are later parsed, the payload is required to consume all its bytes, high-s signatures are rejected, and identity keys are derived correctly from public keys. The findings below are one hypothesis about cross-protocol reuse of identity signatures and two lower-impact issues about domain binding and signature encoding malleability.",
+    "findings": [
+      {
+        "title": "Identity signatures are over a bare 32-byte digest with no protocol tag, so a signature the same key makes for another protocol can be reused as a record signature",
+        "severity": "medium",
+        "confidence": "low",
+        "file": "crates/golem-p2p/src/record.rs",
+        "line": 162,
+        "prerequisites": "The same secp256k1 identity key is used to sign arbitrary 32-byte prehashes in another protocol (the module doc says yagna identity::Sign and ya-relay challenge responses sign raw 32-byte values). An attacker can make the victim sign a chosen 32-byte value in that other protocol, and can choose a payload whose RECORD_DOMAIN-tagged SHA-256 digest equals that value. This is a hypothesis: the other protocol's exact inputs are not in the supplied source.",
+        "impact": "If it holds, the attacker obtains a valid identity signature over a record that binds the victim's identity to the attacker's own endpoint key, which has its own valid endpoint signature. The module's stated guarantee that no party can point an identity at a different endpoint would fail. The attack needs the victim to sign attacker-chosen digests in the other protocol.",
+        "evidence": "pub fn digest_of(payload: &[u8]) -> [u8; 32] { let mut h = Sha256::new(); h.update(RECORD_DOMAIN); h.update(payload); h.finalize().into() } and in verify_at: let digest = NodeRecord::digest_of(&wire.payload); ... sig.recover_node_id(&digest) with no per-purpose tag on the identity signature.",
+        "suggested_fix": "Sign a domain-separated message that the other protocols cannot produce, for example an EIP-191-style prefix or a structured hash that starts with a tag no other protocol uses, and verify the identity signature over that. Alternatively, have identities sign only a digest computed with a per-purpose key that can never be a valid challenge in other protocols. Document that identity keys must not sign arbitrary prehashes.",
+        "validation_needed": "Check the ya-relay challenge-response and yagna identity::Sign inputs. Write a test that produces an identity signature over digest_of(payload) through the other protocol's signing path and confirm VerifiedRecord::verify accepts a record binding it to a foreign endpoint key.",
+        "lens": "crypto",
+        "module": "records",
+        "id": "records/crypto#1"
+      },
+      {
+        "title": "Record signatures do not bind a network identifier, so a record signed for one network verifies in any network",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p/src/record.rs",
+        "line": 40,
+        "prerequisites": "Two networks (closed and open, or two closed networks) use the same identity and endpoint keys and the same record format. A record signed for network A is then offered to network B. The membership certificate, which is what ties a record to a closed network, is outside the signed bytes and can be stripped (a known limit).",
+        "impact": "Records are not separated by network in the signed content. The record check relies on the membership check alone to scope records to a network, so a record signed for one network is valid cryptographically in any network that accepts records without a certificate. Impact depends on how networks are deployed, which the supplied source does not show.",
+        "evidence": "pub const RECORD_DOMAIN: &[u8] = b\"golem-p2p/node-record/v1\\0\"; the digest is SHA-256 over RECORD_DOMAIN and the payload only, and the payload (NodeRecord) has no network or chain field.",
+        "suggested_fix": "Add a network identifier (for example a hash of the network name or the membership root key) to the signed payload or to the domain tag, and check it on verification.",
+        "validation_needed": "Confirm whether any deployment accepts records from more than one network with the same keys. Test a record signed in one network verifying under another network's policy.",
+        "lens": "crypto",
+        "module": "records",
+        "id": "records/crypto#2"
+      },
+      {
+        "title": "A valid signature has two accepted byte encodings (v of 0/1 and 27/28), so one record can exist as two different byte strings",
+        "severity": "low",
+        "confidence": "high",
+        "file": "crates/golem-p2p/src/identity.rs",
+        "line": 124,
+        "prerequisites": "An attacker holds a valid record and can rewrite the v byte of an identity signature from 0 to 27 or 28 to 1 (or the reverse). No key is needed.",
+        "impact": "The same signed content gets a second valid encoding. The store compares records by raw bytes (VerifiedRecord equality and compare in store.rs), so the rewritten copy with the same seq is treated as Older and is not stored as Same. The duplicate can take up store and directory space and makes byte-level dedup and caching unreliable. No signature is forged and no content changes.",
+        "evidence": "v @ (0 | 1) => v, v @ (27 | 28) => v - 27, and in store.rs compare(): Some(e) if e.seq() == rec.seq() && e == rec => Slot::Same, with equality defined as self.inner.bytes == other.inner.bytes.",
+        "suggested_fix": "Accept only one v form for recovery (0/1, since the module documents yagna's raw format), or normalize v before storing and compare records by a canonical digest of the payload plus signatures.",
+        "validation_needed": "Write a test that rewrites v from 0 to 27 on a valid record and checks that VerifiedRecord::verify accepts it and the store treats it as a separate, non-Same record.",
+        "lens": "crypto",
+        "module": "records",
+        "id": "records/crypto#3"
+      }
+    ],
+    "limitations": [
+      "Only the five supplied files were reviewed. ya-relay, yagna identity::Sign, and the membership module are not in the supplied source, so the cross-protocol reuse finding is a hypothesis that needs their signing inputs to confirm.",
+      "The membership module and MembershipPolicy are not supplied; the closed-network checks and the certificate's binding to endpoint and identities are not verified here.",
+      "The iroh crate's ed25519 verify behaviour (strict or non-strict, small-order keys) and k256 scalar range checks in from_slice are assumed from library defaults, not read from source.",
+      "Transport-level crypto (QUIC/TLS for relays and the HTTP directory) is out of scope; the directory is plain HTTP by design.",
+      "Replay of old records after eviction, the unauthenticated membership certificate, and the store's flood behaviour are known limits and were not re-reported.",
+      "Deterministic tool results were treated as context only and were not repeated as findings."
+    ],
+    "lens": "crypto"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 33426,
+    "output_tokens": 6520,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0066026
+}

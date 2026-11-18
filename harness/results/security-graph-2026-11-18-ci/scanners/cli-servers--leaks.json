@@ -1,0 +1,86 @@
+{
+  "module": "cli-servers",
+  "lens": "leaks",
+  "model": "claude-haiku-5-5",
+  "files": [
+    {
+      "file": "crates/golem-p2p-cli/src/listen.rs",
+      "sha256": "32d0d84ba4b857409d4c731918a3a398671a62c51de095256b55bcf22236930e",
+      "lines": 468
+    },
+    {
+      "file": "crates/golem-p2p/src/addrs.rs",
+      "sha256": "7c600b9a5f70faca87026e802ff3f79dd8dcf1ec24b40c3791cf1c21e139b920",
+      "lines": 495
+    }
+  ],
+  "review": {
+    "summary": "Reviewed listen.rs and addrs.rs through the secrets, logging and information-leak lens. No secret keys or tokens reach logs, and the human-output preview escapes control characters, so log forging via the echo path is not demonstrated. The main concrete issue is that loopback addresses are published into signed records. Two lower-severity items concern configuration and identifiers disclosed to remote peers in replies.",
+    "findings": [
+      {
+        "title": "Loopback addresses are published into signed public records",
+        "severity": "low",
+        "confidence": "high",
+        "file": "crates/golem-p2p/src/addrs.rs",
+        "line": 201,
+        "prerequisites": "The node has a loopback interface (lo) carrying 127.0.0.1 or ::1, and it is reported as a direct candidate by iroh. Nothing in HOST_INTERNAL_INTERFACES or the exclude patterns filters lo, so the address passes the filter in select.",
+        "impact": "Loopback addresses are signed into the public record and sent to every peer and directory. They are useless to remote peers, since a peer dialing 127.0.0.1 reaches its own host, and they reveal local-only addressing. This runs against the stated goal of keeping internal addresses out of public records. It occupies a slot under the cap, though loopback ranks last.",
+        "evidence": "Line 201: `} else if names.iter().all(|n| excluded_iface(n)) {` with excluded_iface only checking is_host_internal or exclude patterns, and the test expectation at line 452: `\"127.0.0.1:5\",` inside `s.published`. Scope::Loopback ranks last, but nothing removes it.",
+        "suggested_fix": "Exclude loopback and unspecified addresses (127.0.0.0/8, ::1, 0.0.0.0, ::) before ranking in select, and add `lo` to the excluded interfaces. Update the ranking_and_lan test so it no longer expects 127.0.0.1 in published.",
+        "validation_needed": "Demonstrated by the code and its own test: a loopback address is included in the published list. Confirm with a test that select() on a candidate set containing 127.0.0.1 omits it from published.",
+        "lens": "leaks",
+        "module": "cli-servers",
+        "id": "cli-servers/leaks#1"
+      },
+      {
+        "title": "Refusal replies disclose the server's configured capacity to any remote peer",
+        "severity": "low",
+        "confidence": "medium",
+        "file": "crates/golem-p2p-cli/src/listen.rs",
+        "line": 219,
+        "prerequisites": "A remote peer sends an upload or download that exceeds a limit or finds all slots busy. The reply is sent over the stream to that peer.",
+        "impact": "Each refusal reveals the exact max_transfer_size, max_transfers and max_transfer_time of the listener to whoever asks. That is more than a refused peer needs to know, and it helps a peer probe capacity or tune a flood to just under the busy threshold. It is a mild information disclosure, not a secret leak.",
+        "evidence": "Line 219-221: `\"too_large\" => format!(\"refused reason=too_large max_bytes={}\", limits.max_transfer_size)`; line 223: `\"busy\" => format!(\"refused reason=busy max_transfers={}\", limits.max_transfers)`. These strings are sent via inc.respond at line 345 and recv.stop at line 340.",
+        "suggested_fix": "Send only the reason code to remote peers (for example `refused reason=busy`) and keep the configured numbers in the local log event. Keep the detail only if the documented protocol in docs/cli-events.md requires it.",
+        "validation_needed": "Hypothesis that the numbers are a meaningful disclosure. Whether the protocol needs them is not visible in the supplied source, so check docs/cli-events.md and the bench client.",
+        "lens": "leaks",
+        "module": "cli-servers",
+        "id": "cli-servers/leaks#2"
+      },
+      {
+        "title": "Instance identifier and endpoint ID are echoed to every requesting peer",
+        "severity": "low",
+        "confidence": "low",
+        "file": "crates/golem-p2p-cli/src/listen.rs",
+        "line": 78,
+        "prerequisites": "Any remote peer sends an echo request, which is answered with the `me` prefix built from the endpoint ID and the process instance ID.",
+        "impact": "If the instance ID is meant to be process-local or private, every peer that sends a request learns it, and can link it across requests or to the node's other activity. The endpoint ID is public anyway, so the risk depends entirely on what instance_id represents, which is not in the supplied source.",
+        "evidence": "Line 78: `let instance = hex::encode(ep.instance_id());` and line 82: `let me = format!(\"endpoint={endpoint_id} instance={instance}\");`, then line 178-181: `let reply = format!(\"{me} to={to} from={from} echo={}\", ...)`.",
+        "suggested_fix": "If instance_id is not intended for peers, omit it from the reply and keep it in local logs only. If it is intended to be public, document that in the reply format.",
+        "validation_needed": "Needs the definition of ep.instance_id() in golem-p2p (not supplied). Treat as a hypothesis until its meaning is confirmed.",
+        "lens": "leaks",
+        "module": "cli-servers",
+        "id": "cli-servers/leaks#3"
+      }
+    ],
+    "limitations": [
+      "record.rs, which defines the record bounds and verification, is not supplied, so record contents and what peers can read from them were not traced end to end.",
+      "The Out type and the JSON event serializer are not supplied, so escaping of event fields and whether JSON is built safely were assumed, not verified.",
+      "The semantics of Endpoint::instance_id and whether it is meant to be private are not in the source.",
+      "netwatch interface enumeration and iroh's QAD address selection are not supplied, so which addresses actually reach the candidate list is inferred.",
+      "telemetry.rs (ACTIVITY) and the docs/cli-events.md contract are not supplied.",
+      "No peer-side or directory-side code is included, so it was not checked whether published addresses are used or logged beyond what the listed code shows."
+    ],
+    "lens": "leaks"
+  },
+  "dropped_findings": [],
+  "usage": {
+    "requests": 1,
+    "input_tokens": 18801,
+    "output_tokens": 4826,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "status": "completed",
+  "cost_usd": 0.0042931
+}
