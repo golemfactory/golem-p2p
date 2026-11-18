@@ -396,7 +396,8 @@ which is in the run's artifact for 14 days). All 30 scanners and the summary
 completed. Tokens: scanners 1,264,706 in and 193,249 out ($0.22), summary
 84,054 in and 31,140 out ($0.96), $1.18 in total by the configured rates.
 The scanners reported 79 findings; the summary merged them into 50
-candidates (2 high, 12 medium, 36 low; 13 IDs as noise, 2 as known limits).
+candidates (1 high, 13 medium, 36 low; 25 likely real, 23 needing a test,
+2 known limits; 13 IDs as noise).
 Checked by hand afterwards:
 
 * `probe.rs:789`: confirmed. The download error path slices the peer's
