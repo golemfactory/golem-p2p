@@ -128,7 +128,9 @@ called, since the graph runs those tools itself. The thinking input does not
 apply (scanners use medium, the summary high). The artifact holds the run
 directory (`tools/`, `tools.jsonl`, `plan.json`, `scanners/`, `summary.json`,
 `report.html`), and the run summary shows the tools, the measured cost and
-the ranked candidates. Pages publishing does not apply to it.
+the ranked candidates. On `main` its report is published to Pages like the
+other scopes, with `summary.json` served as `report.json` and `plan.json` as
+`scan-plan.json`.
 
 The run first calls the Security checks workflow (no secrets) and passes its
 results into the report; findings there do not stop the review. Only one scan
@@ -150,10 +152,10 @@ The downloadable artifact contains `report.html`, `report.json`,
 retained for 14 days. If generation fails, the artifact may contain only the
 scan plan; unavailable usage is not evidence of zero API cost.
 
-Pages publishing is optional and **off by default**. After an administrator sets
-up Pages, check **Publish to Pages** when manually starting a run on `main` to
-also publish the report to
-<https://golemfactory.github.io/golem-p2p/>. This is a **public** GitHub Pages
+Successful manual runs on `main` also publish the report to
+<https://golemfactory.github.io/golem-p2p/>. Publishing is **on by default**;
+clear **Publish the report to GitHub Pages** when starting a run to keep its
+report out of the site. This is a **public** GitHub Pages
 site. The latest HTML report is served at the site root, with `report.json`
 and `scan-plan.json` alongside it. Each deployment replaces the previous site;
 older reports remain in Actions artifacts for their retention period. Failed

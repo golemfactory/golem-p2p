@@ -23,9 +23,9 @@ on:
         type: string
         default: ""
       publish_pages:
-        description: Publish to Pages (requires repository Pages setup)
+        description: Publish the report to GitHub Pages (public site; runs on main only)
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
@@ -311,6 +311,20 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Prepare public Pages report
+        if: ${{ success() && inputs.publish_pages && github.ref == 'refs/heads/main' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/security-scan-site"
+          cp "$RUN_DIR/report.html" "$RUNNER_TEMP/security-scan-site/index.html"
+          cp "$RUN_DIR/summary.json" "$RUNNER_TEMP/security-scan-site/report.json"
+          cp "$RUN_DIR/plan.json" "$RUNNER_TEMP/security-scan-site/scan-plan.json"
+
+      - name: Upload Pages site
+        if: ${{ success() && inputs.publish_pages && github.ref == 'refs/heads/main' }}
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: ${{ runner.temp }}/security-scan-site
+
       - name: Embed summary in Actions summary
         if: ${{ !cancelled() }}
         env:
@@ -369,8 +383,11 @@ jobs:
 
   deploy:
     name: Publish report to GitHub Pages
-    needs: scan
-    if: ${{ inputs.publish_pages && github.ref == 'refs/heads/main' }}
+    needs: [scan, graph]
+    # One of the two jobs runs, the other is skipped; publish what succeeded.
+    if: >-
+      ${{ !cancelled() && inputs.publish_pages && github.ref == 'refs/heads/main'
+      && (needs.scan.result == 'success' || needs.graph.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
