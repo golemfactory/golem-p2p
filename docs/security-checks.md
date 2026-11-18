@@ -55,6 +55,7 @@ Current ignores:
 
 | Ignore | Why |
 |---|---|
+| `RUSTSEC-2026-0543` in `deny.toml` (chrono unmaintained, since 2026-11-18) | Informational, no fixed version exists. chrono only comes in through iroh's netwatch 0.20 as a Windows-only dependency (netwatch and its wmi); golem-p2p does not use it. Drop it once netwatch moves off chrono. cargo-audit only warns on it, so it has no audit.toml entry. |
 | zizmor `self-repository` on the `uses: ./.github/workflows/security.yml` line of security-scan.yml | zizmor prefers the newer `$/` form, which actionlint 1.7.12 does not know yet. |
 
 ## Running the checks locally

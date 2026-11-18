@@ -13,7 +13,13 @@ all-features = true
 unmaintained = "all"
 unsound = "all"
 yanked = "deny"
-ignore = []
+ignore = [
+    # chrono is unmaintained (informational, no fix in any version). It only
+    # comes in through iroh's netwatch 0.20 as a Windows-only dependency
+    # (netwatch and its wmi); golem-p2p does not use chrono itself. Drop this
+    # entry once netwatch moves off chrono. Added 2026-11-18.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, Windows-only via iroh netwatch/wmi, no fixed version" },
+]
 
 [licenses]
 # Permissive licenses only. Workspace crates are unpublished and unlicensed.
