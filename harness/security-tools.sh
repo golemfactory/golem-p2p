@@ -5,6 +5,7 @@
 #
 # Usage: harness/security-tools.sh DIR TOOL...
 # Tools: cargo-deny cargo-audit zizmor actionlint shellcheck gitleaks
+#        osv-scanner (manual graph scan only, harness/security_tools.py)
 #
 # To update a tool, change its version and digest together. The digest is
 # the `digest` of the release asset in the GitHub API (or the project's own
@@ -33,6 +34,15 @@ fetch() {
   echo "$sha256  $tmp/$name.tgz" | sha256sum --check --quiet --strict
   tar -xzf "$tmp/$name.tgz" -C "$tmp" "$member"
   install -m 0755 "$tmp/$member" "$dir/$name"
+  echo "$name $version"
+}
+
+# fetch_bin NAME VERSION URL SHA256: the same for a bare binary.
+fetch_bin() {
+  local name=$1 version=$2 url=$3 sha256=$4
+  curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$tmp/$name" "$url"
+  echo "$sha256  $tmp/$name" | sha256sum --check --quiet --strict
+  install -m 0755 "$tmp/$name" "$dir/$name"
   echo "$name $version"
 }
 
@@ -81,6 +91,12 @@ for tool; do
         "$gh/gitleaks/gitleaks/releases/download/v$v/gitleaks_${v}_linux_x64.tar.gz" \
         551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb \
         gitleaks
+      ;;
+    osv-scanner)
+      v=2.7.1
+      fetch_bin osv-scanner "$v" \
+        "$gh/google/osv-scanner/releases/download/v$v/osv-scanner_linux_amd64" \
+        fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8
       ;;
     *)
       echo "unknown tool: $tool" >&2

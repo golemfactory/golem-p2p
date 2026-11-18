@@ -1,0 +1,4 @@
+# Semgrep for harness/security_tools.py (manual graph scan only; not CI).
+# The installed set is harness/semgrep-requirements.txt, every package pinned
+# with hashes; regenerate it like the scan requirements (harness/security-scan.md).
+semgrep==1.183.0
