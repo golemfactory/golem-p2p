@@ -1,19 +1,20 @@
 name: Security scan · Haiku
-run-name: Haiku scan · ${{ inputs.scope }} · ${{ github.ref_name }} · @${{ github.actor }}
+run-name: Security scan · ${{ inputs.scope }} · ${{ github.ref_name }} · @${{ github.actor }}
 
 # Deliberately manual-only: no push, pull_request, or scheduled API spending.
 # Budget: one request per area, at most $0.056 per run (all areas, thinking);
-# see harness/security-scan.md.
+# scope "graph" (tools, 30 Haiku scanners, one Opus summary) at most $1.98,
+# refused above $3.00. See harness/security-scan.md.
 on:
   workflow_dispatch:
     inputs:
       scope:
-        description: Area to review (all = one request per area)
+        description: Area to review (all = one request per area; graph = tools, Haiku scanners per module and lens, Opus summary, up to $1.98)
         type: choice
-        options: [all, records, handshake, closed-network, cli-servers]
+        options: [all, records, handshake, closed-network, cli-servers, graph]
         default: all
       thinking:
-        description: Haiku thinking effort (medium found the known bugs; off is cheapest)
+        description: Haiku thinking effort (medium found the known bugs; off is cheapest; graph always uses medium)
         type: choice
         options: [medium, low, "off"]
         default: medium
@@ -36,6 +37,8 @@ concurrency:
 jobs:
   checks:
     name: Deterministic checks
+    # The graph runs these tools itself (harness/security_tools.py).
+    if: ${{ inputs.scope != 'graph' }}
     # No secrets are passed; the results come back as artifacts. The ./
     # form, not $/: actionlint 1.7.12 does not know the newer syntax.
     uses: ./.github/workflows/security.yml # zizmor: ignore[self-repository]
@@ -44,7 +47,7 @@ jobs:
     name: Scan and render report
     needs: checks
     # Findings of the deterministic checks do not stop the review.
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && inputs.scope != 'graph' }}
     runs-on: ubuntu-latest
     # The API key belongs in this environment's secrets, where an admin can
     # limit it to main and add reviewers (docs/security-checks.md).
@@ -204,6 +207,165 @@ jobs:
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:
           path: ${{ runner.temp }}/security-scan-site
+
+  graph:
+    name: Graph scan (tools, Haiku scanners, Opus summary)
+    if: ${{ inputs.scope == 'graph' }}
+    runs-on: ubuntu-latest
+    environment: security-scan
+    timeout-minutes: 90
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      CARGO_TERM_COLOR: never
+      NO_COLOR: "1"
+      RUST_TOOLCHAIN: "1.96.0"
+      SOURCE_REF: ${{ inputs.source_ref }}
+    steps:
+      - name: Prepare directories
+        run: |
+          echo "RUN_DIR=$RUNNER_TEMP/security-graph" >> "$GITHUB_ENV"
+          echo "TOOLS_DIR=$RUNNER_TEMP/security-tools" >> "$GITHUB_ENV"
+
+      - name: Check out selected revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # All history, for gitleaks and source_ref.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            harness/security-scan-requirements.txt
+            harness/semgrep-requirements.txt
+
+      - name: Install Rust and pinned tools
+        # Release binaries checked by SHA-256 (harness/security-tools.sh),
+        # semgrep from a hashed lock, semgrep-rules at a pinned commit.
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy
+          harness/security-tools.sh "$TOOLS_DIR" cargo-deny cargo-audit gitleaks osv-scanner
+          python -m venv "$TOOLS_DIR/semgrep-venv"
+          "$TOOLS_DIR/semgrep-venv/bin/pip" install --disable-pip-version-check --require-hashes \
+            --only-binary :all: -r harness/semgrep-requirements.txt
+          rules_commit=$(sed -n 's/^SEMGREP_RULES_COMMIT = "\([0-9a-f]\{40\}\)"$/\1/p' harness/security_tools.py)
+          git init -q "$TOOLS_DIR/semgrep-rules"
+          git -C "$TOOLS_DIR/semgrep-rules" fetch -q --depth 1 https://github.com/semgrep/semgrep-rules "$rules_commit"
+          git -C "$TOOLS_DIR/semgrep-rules" checkout -q FETCH_HEAD
+
+      - name: Install scanner
+        run: >-
+          python -m pip install --disable-pip-version-check --require-hashes
+          --only-binary :all: -r harness/security-scan-requirements.txt
+
+      - name: Check scanner and renderer with synthetic data
+        run: python -m unittest discover -s harness -p 'test_*security*.py'
+
+      - name: Run tools and record the plan (no API call)
+        id: plan
+        run: |
+          args=(--tools-dir "$TOOLS_DIR")
+          [ -z "$SOURCE_REF" ] || args+=(--source-ref "$SOURCE_REF")
+          python harness/security_graph.py "$RUN_DIR" --dry-run "${args[@]}" > /dev/null
+          python - <<'PY'
+          import json, os
+          for line in open(os.path.join(os.environ["RUN_DIR"], "tools.jsonl")):
+              t = json.loads(line)
+              print(f'{t.get("tool")}: {t.get("status")}, {len(t.get("findings") or [])} findings')
+          PY
+
+      - name: Run Haiku scanners and Opus summary
+        id: scan
+        timeout-minutes: 60
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_API_KEY_SCX }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::Secret CLAUDE_API_KEY_SCX is missing or unavailable."
+            exit 1
+          fi
+          args=(--tools-dir "$TOOLS_DIR" --reuse-tools)
+          [ -z "$SOURCE_REF" ] || args+=(--source-ref "$SOURCE_REF")
+          python harness/security_graph.py "$RUN_DIR" "${args[@]}"
+
+      - name: Render HTML
+        id: render
+        if: ${{ !cancelled() && steps.plan.outcome == 'success' }}
+        run: |
+          if [ ! -f "$RUN_DIR/summary.json" ]; then
+            echo "::error::The graph scan wrote no summary."
+            exit 1
+          fi
+          python harness/render_security_report.py "$RUN_DIR/summary.json" --output "$RUN_DIR/report.html"
+
+      - name: Upload reports
+        id: artifact
+        if: ${{ !cancelled() && steps.plan.outcome == 'success' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: security-graph-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/security-graph/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Embed summary in Actions summary
+        if: ${{ !cancelled() }}
+        env:
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          RENDER_OUTCOME: ${{ steps.render.outcome }}
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: |
+          python - <<'PY'
+          import html
+          import json
+          import os
+          from pathlib import Path
+
+          directory = Path(os.environ["RUN_DIR"])
+          def load(name):
+              path = directory / name
+              return json.loads(path.read_text()) if path.exists() else {}
+          def cell(value):
+              # Model text: escaped, one line, no table breaks.
+              return html.escape(" ".join(str(value).split())).replace("|", "&#124;")[:300]
+
+          plan = load("plan.json")
+          report = load("summary.json")
+          cost = report.get("measured_cost_usd", {})
+          tools = []
+          tools_file = directory / "tools.jsonl"
+          if tools_file.exists():
+              tools = [json.loads(line) for line in tools_file.read_text().splitlines() if line.strip()]
+          scanners = report.get("scanners", [])
+          done = sum(1 for s in scanners if s.get("status") == "completed")
+          lines = ["## Security graph scan", "", "| Run detail | Value |", "| --- | --- |"]
+          for label, value in [
+              ("Scanners / summary", f'{os.environ["SCAN_OUTCOME"]} ({done}/{len(scanners)} scanners, summary {report.get("summary_status", "n/a")})'),
+              ("HTML", os.environ["RENDER_OUTCOME"]),
+              ("Models", f'{plan.get("scanner_model", "?")} scanners, {plan.get("summary_model", "?")} summary'),
+              ("Commit", plan.get("source_commit", os.environ["GITHUB_SHA"])),
+              ("Worst-case estimate", f'${plan.get("estimated_max_usd", 0):.2f} (limit ${plan.get("max_graph_usd", 0):.2f})'),
+              ("Measured cost", f'${cost["total"]:.4f} (scanners ${cost["scanners"]:.4f}, summary ${cost["summary"]:.4f})' if cost else "Unavailable"),
+          ]:
+              lines.append(f"| {label} | {cell(value)} |")
+          if os.environ["ARTIFACT_URL"]:
+              lines += ["", f"[Download reports]({os.environ['ARTIFACT_URL']}) (open `report.html`)"]
+          lines += ["", "### Tools", "", "| Tool | Status | Findings |", "| --- | --- | --- |"]
+          lines += [f'| {cell(t.get("tool"))} | {cell(t.get("status"))} | {len(t.get("findings") or [])} |' for t in tools]
+          summary = report.get("summary")
+          if summary:
+              lines += ["", "### Summary", "", cell(summary.get("overview", "")),
+                        "", "| # | Severity | Verdict | Confidence | Finding | Location |", "| --- | --- | --- | --- | --- | --- |"]
+              for i, c in enumerate(summary.get("candidates", []), 1):
+                  where = ", ".join(f'{l.get("file")}:{l.get("line")}' for l in c.get("locations", []))
+                  lines.append(f'| {i} | {cell(c.get("severity"))} | {cell(c.get("verdict"))} | {cell(c.get("confidence"))} | {cell(c.get("title"))} | `{cell(where)}` |')
+          lines += ["", "Model findings are hypotheses until checked against the code; they do not fail the job. Cost figures are estimates at the configured rates, not a bill."]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
+              output.write("\n".join(lines) + "\n")
+          PY
 
   deploy:
     name: Publish report to GitHub Pages

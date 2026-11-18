@@ -119,6 +119,17 @@ schedules never start it. It uses the secret `CLAUDE_API_KEY_SCX`, mapped to
 `security-scan` environment: an admin should keep the secret there, limited
 to `main` (docs/security-checks.md).
 
+Scope **graph** runs the graph scan (section "Graph scan") in its own job
+instead: it installs the pinned tools (cargo-deny, cargo-audit, gitleaks,
+osv-scanner, semgrep with its rules, clippy), runs them, then the 30 Haiku
+scanners and the Opus summary on the same secret, with a worst case of
+$1.98 per run (refused above $3.00). The Security checks workflow is not
+called, since the graph runs those tools itself. The thinking input does not
+apply (scanners use medium, the summary high). The artifact holds the run
+directory (`tools/`, `tools.jsonl`, `plan.json`, `scanners/`, `summary.json`,
+`report.html`), and the run summary shows the tools, the measured cost and
+the ranked candidates. Pages publishing does not apply to it.
+
 The run first calls the Security checks workflow (no secrets) and passes its
 results into the report; findings there do not stop the review. Only one scan
 runs at a time. The scan step has a ten-minute timeout, the job twenty
