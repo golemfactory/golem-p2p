@@ -77,6 +77,12 @@ python3 -m venv /tmp/pip-audit && /tmp/pip-audit/bin/pip install pip-audit==2.10
 /tmp/pip-audit/bin/pip-audit --strict --disable-pip --require-hashes -r harness/security-scan-requirements.txt
 ```
 
+The manual graph scan (`harness/security_graph.py`, see
+`harness/security-scan.md`) runs these tools locally too, adds osv-scanner
+(also pinned in `harness/security-tools.sh`), semgrep, clippy's panic-surface
+lints and an unsafe count, and feeds all results to its model stages. It is
+not part of any workflow.
+
 `harness/security-check.sh TITLE -- COMMAND...` is what the workflow runs
 around each check (it writes the run summary when `$GITHUB_STEP_SUMMARY` is
 set).

@@ -5,6 +5,10 @@ checks of `.github/workflows/security.yml` (docs/security-checks.md). Findings
 are model hypotheses until checked against the code and reproduced; this is
 not an audit or a clean bill of health.
 
+The graph scan (last section) extends this: more deterministic tools, then
+30 narrow Haiku scanners (module × problem type), then one Opus summary.
+It is manual only and runs locally; no workflow starts it.
+
 ## Areas and budget
 
 The scanner sends whole source files of one area per request, with line
@@ -230,3 +234,144 @@ Run renderer checks with synthetic data:
 ```sh
 python3 -m unittest discover -s harness -p 'test_render_security_report.py'
 ```
+
+## Graph scan
+
+`harness/security_graph.py` (also `harness/security_scan.py graph`) runs
+three stages:
+
+1. **Deterministic tools** (`harness/security_tools.py`), on the working
+   tree. Each writes its raw output to `RUN_DIR/tools/` and one normalized
+   JSON line to `RUN_DIR/tools.jsonl` (status `clean`, `findings`,
+   `missing` or `failed`; a missing or failing tool is never reported as
+   clean). The lines also have the fields of `security-check.sh`, so
+   `security_scan.py --checks RUN_DIR/tools.jsonl` accepts them.
+2. **Scanners**: Haiku 5.5 (`claude-haiku-5-5`), medium thinking, one request
+   per module and lens. Each gets the module's files, one lens's
+   instructions, the tool results for that module and lens, and the known
+   limits listed above. It returns the review schema of the single-area scan;
+   every finding is tagged with `module`, `lens` and an ID (`records/dos#2`).
+   Findings whose line lies outside the supplied file are dropped and counted.
+3. **Summary**: Opus 5.5 (`claude-opus-5-5`), high thinking, streamed. It gets
+   every scanner's output, every tool's results, the known limits and the
+   source lines around each scanner finding (±8 lines, at most 150 KB). It
+   merges duplicates, gives each candidate a verdict (`likely_real`,
+   `plausible_needs_test`, `known_limit`), ranks by severity and confidence,
+   lists disagreements between scanners, dismisses noise with a reason,
+   assesses the tools and lists what to verify by hand. The script then
+   checks that every scanner finding ID is merged or dismissed and that each
+   location exists, and records any problem in `summary_checks`.
+
+The models have no tools; the response schema is all they get.
+
+### Tools
+
+| Tool | Version, pin | What | In CI too |
+|---|---|---|---|
+| cargo-audit | 0.23.0, `security-tools.sh` | RustSec advisories for `Cargo.lock`, warnings included | yes |
+| cargo-deny | 0.20.2, `security-tools.sh`, `deny.toml` | advisories, licenses, bans, sources (the golemfactory/iroh fork is allowed in `deny.toml`) | yes |
+| osv-scanner | 2.7.1, `security-tools.sh` | OSV (RustSec and GitHub advisories) for `Cargo.lock` and both Python lock files | no |
+| gitleaks | 8.30.1, `security-tools.sh`, `.gitleaks.toml` | all commits of all refs, plus the tree of HEAD (`git archive`, so untracked keys and results stay out); only rule, file, line and commit are kept | history only |
+| clippy panic surface | Rust 1.96.0 | `unwrap_used`, `expect_used`, `indexing_slicing`, `panic`, `arithmetic_side_effects`, `cast_possible_truncation` on non-test code; informational, leads for the `panics` and `dos` lenses | no |
+| unsafe count | regex | `unsafe` in the workspace's `.rs` files and the crate-level lint attributes; informational | no (compile-time `forbid`/`deny`) |
+| semgrep | 1.183.0, `semgrep-requirements.txt` (hashes); rules at semgrep-rules `a5ad1714f00c` | `rust/` and `python/lang/security/` rules over the tracked `.rs` and `.py` files | no |
+
+Not included: cargo-geiger (it builds every dependency; the workspace's own
+code already forbids unsafe code, see the unsafe count) and pip-audit (osv-
+scanner covers the same lock files; CI runs pip-audit). Clippy uses its own
+target directory (`~/.cache/golem-p2p-security-target`).
+
+Install into user space (no sudo), pinned and checked:
+
+```sh
+harness/security-tools.sh ~/.local/security-tools cargo-deny cargo-audit gitleaks osv-scanner
+python3 -m venv ~/.local/security-tools/semgrep-venv
+~/.local/security-tools/semgrep-venv/bin/pip install --require-hashes --only-binary :all: -r harness/semgrep-requirements.txt
+git init ~/.local/security-tools/semgrep-rules && cd ~/.local/security-tools/semgrep-rules \
+  && git fetch --depth 1 https://github.com/semgrep/semgrep-rules a5ad1714f00c9f7fde980cab0ea1d6dc6d414fd2 \
+  && git checkout FETCH_HEAD
+```
+
+`harness/semgrep-requirements.txt` is generated from the `.in` file like the
+scan requirements (`uv pip compile ... --universal --python-version 3.11
+--generate-hashes`).
+
+### Modules and lenses
+
+Lenses: `dos` (input parsing, denial of service, resource bounds), `auth`
+(authentication, authorization, membership, certificates), `crypto`
+(signatures and keys), `panics` (concurrency, panics, unwraps), `leaks`
+(secrets, logging, information leaks).
+
+| Module | Files | Lenses |
+|---|---|---|
+| `records` | record, identity, signer, store, directory | all five |
+| `handshake` | endpoint, wire, error | all five |
+| `closed-network` | membership, registry (library and CLI), discovery, lookup | all five |
+| `telemetry` | library telemetry, CLI telemetry and collector | all five |
+| `cli-servers` | the CLI's listen server, addrs | dos, panics, leaks (peers are authenticated by the endpoint) |
+| `cli-client` | CLI main, parse, out, observe, probe; library lib.rs | dos, panics, leaks |
+| `bench-soak` | bench (mod, local), soak | dos, panics (measurement clients; the operator is trusted) |
+| `harness-python` | lab reflector and natcheck, security scan, graph, tools and renderer | dos, leaks |
+
+Not scanned: `bench/report.rs` and `bench/verdict.rs` (formatting of local
+measurements), `build.rs` and the integration tests.
+
+### Budget
+
+Per scanner request: input at most 60,000 tokens (counted before sending, so
+below Haiku's 100K price step), output at most 16,000 tokens including
+thinking. Summary: input at most 150,000 tokens, output at most 48,000. One
+request each, no retries (SDK and model), four scanners at a time. Prices
+checked on 2026-11-18: Haiku 5.5 $0.10 / $0.50 per million input / output
+tokens (prompts up to 100K), Opus 5.5 $4 / $20. Worst case with every
+request at its limits: 30 × $0.014 + $1.56 = $1.98. The script refuses to
+start above $3.00. `summary.json` records the token usage the API reported
+and the cost at these prices (`measured_cost_usd`); it is not a bill.
+
+The scanner prompts are 43 to 132 KB (about 18,000 to 53,000 tokens). A
+prompt over the input limit is refused before sending and that scanner is
+reported as failed; the others continue.
+
+### Running it
+
+```sh
+python3 -m venv /tmp/golem-p2p-security-venv
+/tmp/golem-p2p-security-venv/bin/pip install --require-hashes --only-binary :all: -r harness/security-scan-requirements.txt
+# Tools only, plan and worst case; no API calls:
+/tmp/golem-p2p-security-venv/bin/python harness/security_scan.py graph harness/results/security-graph-DATE --dry-run
+# The full graph (key from the environment or the hidden prompt):
+/tmp/golem-p2p-security-venv/bin/python harness/security_scan.py graph harness/results/security-graph-DATE --reuse-tools
+python3 harness/render_security_report.py harness/results/security-graph-DATE/summary.json --output harness/results/security-graph-DATE/report.html
+```
+
+Sources are read from `--source-ref` (default `HEAD`) with `git show`;
+`--working-tree` reads the working tree instead. `--modules` limits the run,
+`--no-summary` skips Opus. A run directory that already has a
+`summary.json` is refused. Output: `tools/` (raw tool output), `tools.jsonl`,
+`plan.json`, `scanners/MODULE--LENS.json`, `summary.json`, and the HTML.
+Offline tests (synthetic data and a stand-in model):
+`python3 -m unittest discover -s harness -p 'test_*security*.py'`.
+
+### Results of 2026-11-18 (tools)
+
+On `main` at the commit that added the graph scan:
+
+* cargo-deny fails: RUSTSEC-2026-0543, chrono 0.4.45 is unmaintained. chrono
+  comes only from `wmi` (Windows) via iroh's `netwatch`, so Linux builds do
+  not compile it; the CI job fails on it all the same. cargo-audit reports it
+  as a warning, osv-scanner as an advisory. 22 duplicate-version warnings.
+* osv-scanner: six advisory groups in the semgrep tool environment
+  (`mcp` 1.29.0: four, `opentelemetry-api` 1.37.0: two). Semgrep does not
+  run its MCP server or tracing here; they concern the local tool, not
+  golem-p2p. Nothing for the scan requirements.
+* gitleaks: no leaks in the history of all refs or in the tree of HEAD.
+* Unsafe: four uses, all the glibc `mallinfo2` call of soak (CLI and its
+  test copy); the library forbids unsafe code.
+* Clippy panic surface: 325 hits in non-test code (arithmetic 187, expect
+  81, truncating casts 30, indexing 27); most in the telemetry collector,
+  endpoint, soak, bench and probe.
+* Semgrep: 15 matches, all low: `temp_dir` use (collector and tests),
+  binds to all interfaces in natcheck, the soak `unsafe`, `csv` without
+  defusedcsv in a harness summarizer, a dynamic urllib URL in the soak sampler.
+
