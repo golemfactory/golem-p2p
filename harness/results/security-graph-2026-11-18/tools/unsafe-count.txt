@@ -1,0 +1,6 @@
+crates/golem-p2p-cli/src/main.rs:22 #![deny(unsafe_code)]
+crates/golem-p2p/src/lib.rs:50 #![forbid(unsafe_code)]
+crates/golem-p2p-cli/src/soak.rs:645: unsafe extern "C" {
+crates/golem-p2p-cli/src/soak.rs:650: let m = unsafe { mallinfo2() };
+crates/golem-p2p/tests/soak.rs:54: unsafe extern "C" {
+crates/golem-p2p/tests/soak.rs:59: let m = unsafe { mallinfo2() };

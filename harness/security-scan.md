@@ -353,25 +353,29 @@ Sources are read from `--source-ref` (default `HEAD`) with `git show`;
 Offline tests (synthetic data and a stand-in model):
 `python3 -m unittest discover -s harness -p 'test_*security*.py'`.
 
-### Results of 2026-11-18 (tools)
+### Results of 2026-11-18
 
-On `main` at the commit that added the graph scan:
+Tools on `main` at `a0fdc67`, in `harness/results/security-graph-2026-11-18/`
+(with `plan.json`: 30 scanners, worst case $1.98):
 
 * cargo-deny fails: RUSTSEC-2026-0543, chrono 0.4.45 is unmaintained. chrono
   comes only from `wmi` (Windows) via iroh's `netwatch`, so Linux builds do
   not compile it; the CI job fails on it all the same. cargo-audit reports it
   as a warning, osv-scanner as an advisory. 22 duplicate-version warnings.
 * osv-scanner: six advisory groups in the semgrep tool environment
-  (`mcp` 1.29.0: four, `opentelemetry-api` 1.37.0: two). Semgrep does not
-  run its MCP server or tracing here; they concern the local tool, not
-  golem-p2p. Nothing for the scan requirements.
+  (`mcp` 1.29.0: four, `opentelemetry-api` 1.37.0: two). They concern the
+  local tool, not golem-p2p. Nothing for the scan requirements.
 * gitleaks: no leaks in the history of all refs or in the tree of HEAD.
 * Unsafe: four uses, all the glibc `mallinfo2` call of soak (CLI and its
   test copy); the library forbids unsafe code.
 * Clippy panic surface: 325 hits in non-test code (arithmetic 187, expect
   81, truncating casts 30, indexing 27); most in the telemetry collector,
   endpoint, soak, bench and probe.
-* Semgrep: 15 matches, all low: `temp_dir` use (collector and tests),
-  binds to all interfaces in natcheck, the soak `unsafe`, `csv` without
-  defusedcsv in a harness summarizer, a dynamic urllib URL in the soak sampler.
+* Semgrep: 16 matches. One rated high, `subprocess.run` in
+  `security_tools.py`, takes a constant argument list without a shell (no
+  injection). One medium, a urllib URL in the soak sampler, comes from the
+  operator. The rest are low: `temp_dir` in tests, binds to all interfaces
+  in natcheck, the soak `unsafe`, `csv` without defusedcsv in a summarizer.
 
+The model stages did not run on 2026-11-18: no Anthropic API key was
+available on the host. Run them on the same directory with `--reuse-tools`.

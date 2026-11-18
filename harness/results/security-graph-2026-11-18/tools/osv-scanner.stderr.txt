@@ -1,0 +1,5 @@
+Starting filesystem walk for root: /
+Scanned /home/ubuntu/golemfactory/golem-p2p/Cargo.lock file and found 426 packages
+Scanned /home/ubuntu/golemfactory/golem-p2p/harness/security-scan-requirements.txt file and found 22 packages
+Scanned /home/ubuntu/golemfactory/golem-p2p/harness/semgrep-requirements.txt file and found 67 packages
+End status: 0 dirs visited, 3 inodes visited, 3 Extract calls, 11.634749ms elapsed, 11.634791ms wall time

@@ -1,0 +1,2 @@
+   Compiling golem-p2p-cli v0.1.0 (/home/ubuntu/golemfactory/golem-p2p/crates/golem-p2p-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.18s

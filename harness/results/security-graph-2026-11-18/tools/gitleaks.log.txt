@@ -1,0 +1,7 @@
+$ gitleaks history (exit 0)
+12:34PM INF 161 commits scanned.
+12:34PM INF scanned ~48847007 bytes (48.85 MB) in 2.57s
+12:34PM INF no leaks found
+$ gitleaks tree (exit 0)
+12:34PM INF scanned ~48706838 bytes (48.71 MB) in 2.6s
+12:34PM INF no leaks found
